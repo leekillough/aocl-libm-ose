@@ -78,16 +78,27 @@
 #define CBRT_EXP_COEFF_5    3.01783264746227734842687340233E-2  // 0x3f9ee7113506ac13
 #define CBRT_EXP_COEFF_6    -2.34720317024843770636888251602E-2 // 0xbf98090d6221a247
 
-#define LOW_2_POW_N2        1.77929718607039166806688400583E-8  // 0x3e531ae515c447bb // cbrt(2^-2) Low
-#define HIGH_2_POW_N2       6.299605071544647216796875E-1       // 0x3FE428A2F0000000 // cbrt(2^-2) High
-#define LOW_2_POW_N1        9.76019226667272715610794680662E-9  // 0x3e44f5b8f20ac166 // cbrt(2^-1) Low
-#define HIGH_2_POW_N1       7.93700516223907470703125E-1        // 0x3FE965FEA0000000 // cbrt(2^-1) High
-#define LOW_2_POW_0         0.0E0                               // 0x0000000000000000 // cbrt(2^0) Low
-#define HIGH_2_POW_0        1.0E0                               // 0x3FF0000000000000 // cbrt(2^0) High
-#define LOW_2_POW_P1        3.55859437214078333613376801167E-8  // 0x3e631ae515c447bb // cbrt(2^1) Low
-#define HIGH_2_POW_P1       1.259921014308929443359375E0        // 0x3FF428A2F0000000 // cbrt(2^1) High
-#define LOW_2_POW_P2        1.95203845333454543122158936132E-8  // 0x3e54f5b8f20ac166 // cbrt(2^2) Low
-#define HIGH_2_POW_P2       1.58740103244781494140625E0         // 0x3FF965FEA0000000 // cbrt(2^2) High
+/*
+ * cbrt(2^k) high and low parts for k in {-2, -1, 0, 1, 2}, indexed by k+2.
+ * Stored as two parallel arrays so both loads hit the same cache line and
+ * the compiler can emit a single indexed load for each, with no branch.
+ * rem from biased_exp % 3 is in {-2,-1,0,1,2}; index = rem + 2.
+ */
+static const double cbrt_rem_h[5] = {
+    6.299605071544647216796875E-1,   /* cbrt(2^-2) high  0x3FE428A2F0000000  k=-2 */
+    7.93700516223907470703125E-1,    /* cbrt(2^-1) high  0x3FE965FEA0000000  k=-1 */
+    1.0E0,                           /* cbrt(2^0)  high  0x3FF0000000000000  k= 0 */
+    1.259921014308929443359375E0,    /* cbrt(2^1)  high  0x3FF428A2F0000000  k= 1 */
+    1.58740103244781494140625E0,     /* cbrt(2^2)  high  0x3FF965FEA0000000  k= 2 */
+};
+
+static const double cbrt_rem_t[5] = {
+    1.77929718607039166806688400583E-8,  /* cbrt(2^-2) low  0x3e531ae515c447bb */
+    9.76019226667272715610794680662E-9,  /* cbrt(2^-1) low  0x3e44f5b8f20ac166 */
+    0.0E0,                               /* cbrt(2^0)  low  0x0000000000000000 */
+    3.55859437214078333613376801167E-8,  /* cbrt(2^1)  low  0x3e631ae515c447bb */
+    1.95203845333454543122158936132E-8,  /* cbrt(2^2)  low  0x3e54f5b8f20ac166 */
+};
 
 static inline void cbrt_special(double x, U32 code) {
     flt64_t ix = {.d = x};
@@ -106,174 +117,102 @@ static inline void cbrt_special(double x, U32 code) {
 
 double
 ALM_PROTO_OPT(cbrt)(double x) {
-    uint64_t uix64;
-    uint64_t sign = 0;
-    uint64_t ix = 0;
-    uint64_t ixe = 0;
-    uint64_t ixm = 0;
+    uint64_t ix = asuint64(x);
 
-    int64_t quotient = 0;
-    int64_t rem = 0;
-    double temp = 0;
-    double r = 0;
+    uint64_t ixe = EXPBITS_DP64 & ix;
+    uint64_t ixm = MANTBITS_DP64 & ix;
 
-    ix =  asuint64(x);
-
-    ixe = EXPBITS_DP64 & ix;  // exponent extractor
-    ixm = MANTBITS_DP64 & ix; // mantissa extractor
-
-    if (unlikely( ixe == PINFBITPATT_DP64 ))
-    {
+    if (unlikely(ixe == PINFBITPATT_DP64)) {
         if (ixm == 0)
             cbrt_special(x, AMD_F_OVERFLOW);
         else
             cbrt_special(x, AMD_F_INVALID);
-
         return x + x;
     }
 
-    ixe = ixe >> EXPSHIFTBITS_DP64; // shift right 52 bits for exponent value only
+    ixe >>= EXPSHIFTBITS_DP64;
 
-    if ( ixe == 0 )
-    {
-        // denormal number;
-        if (ixm == 0) // is zero
+    if (unlikely(ixe == 0)) {
+        if (ixm == 0)
             return 0.0;
-
-        /******************************************************** */
-        /* Subnormal number                                       */
-        /* Exponent = 0 and mantissa != 0                         */
-        /* Before calculating cbrt will convert this input in to  */
-        /* normalised form                                        */
-        /* signBit ExponentBits MantissaBits                      */
-        /* Input to this loop:  (X = 0/1)                         */
-        /*  X   00000000000   00000XXXXXXXX.........              */
-        /* Output from this loop:                                 */
-        /*  X   XXXXXXXXXXX   XXXXXXXX.........00000              */
-        /**********************************************************/
-        
-        ixe = ONEEXPBITS_DP64;
-        //Get absolute value of the input
-        ixm = ix & POS_BITSET_DP64;
-        // Mantissa is represneted as 1.XXXX instead of 0.XXXXX
-        ixm = ixm | ixe;
-        temp = asdouble(ixm);
-        r = asdouble(ixe);
-        //Decimal digits is left shifted until MSB is set to 1
-        temp = temp - r;
-        //Normalised input
-        ix =  asuint64(temp);
-
-        ixe = EXPBITS_DP64 & ix;  // exponent extractor
-        ixm = MANTBITS_DP64 & ix; // mantissa extractor
-        ixe = ixe >> EXPSHIFTBITS_DP64;
-        ixe = ixe + (uint64_t)EMIN_DP64;
+        /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
+        uint64_t abs_ix = ix & POS_BITSET_DP64;
+        double tmp = asdouble(abs_ix | ONEEXPBITS_DP64) - 1.0;
+        ix = asuint64(tmp);
+        ixe = (ix & EXPBITS_DP64) >> EXPSHIFTBITS_DP64;
+        ixm = ix & MANTBITS_DP64;
+        ixe += (uint64_t)EMIN_DP64;
     }
 
-    uix64 = asuint64(x);
+    const uint64_t sign = asuint64(x) >> 63;
 
-    sign = uix64 >> 63; // extract sign bit
+    int64_t biased_exp = (int64_t)ixe - 1023;
 
-    ixe = ixe - 1023; // exponent - 0x3FF, bias removal
+    /* rem is in {-2,-1,0,1,2}; index into cbrt_rem_h/t is rem+2. */
+    int64_t quotient = biased_exp / 3;
+    int64_t rem      = biased_exp % 3;
 
-    quotient = (int64_t)ixe / 3; // quotient, scale factor
-    rem = (int64_t)ixe % 3;
+    uint64_t exponDouble = (uint64_t)(quotient + 1023) << 52;
 
-    quotient += 1023;
-    uint64_t exponDouble = (uint64_t)quotient << 52;
+    /* Reduced mantissa in [0.5, 1). */
+    double r = asdouble((ix & MANTBITS_DP64) | HALFEXPBITS_DP64);
 
-    uix64 = ix & MANTBITS_DP64;
-    uix64 = uix64 | HALFEXPBITS_DP64;
+    /*
+     * 9-bit table index: upper 9 mantissa bits, rounded to nearest.
+     * Bit 43 is the rounding bit; bits 44..52 are the index.
+     */
+    uint64_t mant_idx = ((ixm >> 43) & 1) + ((ixm >> 44) | 0x100);
 
-    uint64_t mant_1 = ixm >> 43;
-    uint64_t mant_2 = ixm >> 44;
+    /*
+     * Convert mant_idx to double without vcvtsi2sd.
+     * mant_idx is in [256, 512].  OR it into the mantissa of 2^52 then
+     * subtract the magic constant — IEEE 754 exact integer representability
+     * guarantees the result equals mant_idx exactly.
+     */
+    static const double midx_magic = 4503599627370496.0; /* 2^52 */
+    uint64_t midx_bits = mant_idx | (uint64_t)0x4330000000000000ULL;
+    double midx_f = asdouble(midx_bits) - midx_magic;
 
-    mant_1 &= 0x0000000000000001;
-    mant_2 |= 0x0000000000000100;
+    r = r - midx_f * ONE_BY_512;
+    r = asdouble(InverseTable[mant_idx - 256]) * r;
 
-    mant_1 += mant_2;
+    /*
+     * Degree-6 polynomial: c1*r + c2*r^2 + c3*r^3 + c4*r^4 + c5*r^5 + c6*r^6.
+     * Evaluated in two independent chains (pairs of consecutive terms) so both
+     * FMA execution units on Zen 5 stay busy simultaneously.
+     *
+     * Pair grouping: p12 = r*(c1 + c2*r), p34 = r^3*(c3 + c4*r), p56 = r^5*(c5 + c6*r)
+     * Chains A and B each compute two of these pairs independently, then sum.
+     */
+    double r2 = r * r;
+    double r3 = r2 * r;
+    double r4 = r2 * r2;
+    double r5 = r4 * r;
+    double r6 = r3 * r3;
 
-    temp = (double)mant_1;
-    temp = ONE_BY_512 * temp;
+    /* Two independent accumulators: A takes terms 1,3,5; B takes terms 2,4,6 */
+    double polyA = CBRT_EXP_COEFF_1 * r;
+    double polyB = CBRT_EXP_COEFF_2 * r2;
+    polyA += CBRT_EXP_COEFF_3 * r3;
+    polyB += CBRT_EXP_COEFF_4 * r4;
+    polyA += CBRT_EXP_COEFF_5 * r5;
+    polyB += CBRT_EXP_COEFF_6 * r6;
+    double poly = polyA + polyB;
 
-    r = asdouble(uix64);
-    r = r - temp;
+    /* cbrt_rem_h/t are indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
+    double cbrtRem_h = cbrt_rem_h[rem + 2];
+    double cbrtRem_t = cbrt_rem_t[rem + 2];
 
-    mant_1 = mant_1 - 256;
-    temp = asdouble(InverseTable[mant_1]);
-    r = temp * r;
-
-    // To calculate cbrt: exp = coeff1 * r + coeff2 * r^2 + coeff3 * r^3 + coeff4 * r^4 + coeff5 * r^5 + coeff6 * r^6
-
-    double r2 = r*r;
-    double r3 = r2*r;
-    double r4 = r2*r2;
-    double r5 = r4*r;
-    double r6 = r3*r3;
-
-    double exp = CBRT_EXP_COEFF_1 * r;
-    exp += CBRT_EXP_COEFF_2 * r2;
-    exp += CBRT_EXP_COEFF_3 * r3;
-    exp += CBRT_EXP_COEFF_4 * r4;
-    exp += CBRT_EXP_COEFF_5 * r5;
-    exp += CBRT_EXP_COEFF_6 * r6;
-
-    double cbrtRem_h = 0;
-    double cbrtRem_t = 0;
-
-    switch(rem)
-    {
-        case -2:
-            cbrtRem_h = HIGH_2_POW_N2;
-            cbrtRem_t = LOW_2_POW_N2;
-            break;
-
-        case -1:
-            cbrtRem_h = HIGH_2_POW_N1;
-            cbrtRem_t = LOW_2_POW_N1;
-            break;
-
-        case 0:
-            cbrtRem_h = HIGH_2_POW_0;
-            cbrtRem_t = LOW_2_POW_0;
-            break;
-
-        case 1:
-            cbrtRem_h = HIGH_2_POW_P1;
-            cbrtRem_t = LOW_2_POW_P1;
-            break;
-
-        case 2:
-            cbrtRem_h = HIGH_2_POW_P2;
-            cbrtRem_t = LOW_2_POW_P2;
-            break;
-
-        default:
-            /* The codeflow is not expected to enter default case here!
-             * Variable rem can only be -2, -1, 0, 1, 2.
-             */ 
-            break;
-    }
-
-    mant_1 <<= 1; // mant_1 * 2
-
-    double cbrtF_t = asdouble(F_H_L[mant_1]);
-    double cbrtF_h = asdouble(F_H_L[mant_1+1]);
+    uint64_t fidx = (mant_idx - 256) << 1;
+    double cbrtF_t = asdouble(F_H_L[fidx]);
+    double cbrtF_h = asdouble(F_H_L[fidx + 1]);
 
     double bH = cbrtF_h * cbrtRem_h;
-    double bT = (cbrtF_t * cbrtRem_t) + (cbrtF_t * cbrtRem_h) + (cbrtRem_t * cbrtF_h);
+    double bT = cbrtF_t * cbrtRem_t + cbrtF_t * cbrtRem_h + cbrtRem_t * cbrtF_h;
 
-    // ans = (exp * bT) + bT + (exp * bH) + bH
-    double ans = (exp * bT);
-    ans += bT;
-    ans += (exp * bH);
-    ans += bH;
+    double ans = (poly * bT + bT) + (poly * bH + bH);
+    ans = ans * asdouble(exponDouble);
 
-    double xd3biasOnly = asdouble(exponDouble);
-    ans = ans * xd3biasOnly;
-    if(sign)
-        ans *= -1;
-
-    return ans;
-
+    /* Apply sign via bit manipulation — no branch, no multiply by -1. */
+    return asdouble(asuint64(ans) | (sign << 63));
 }
