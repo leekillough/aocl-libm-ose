@@ -123,7 +123,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
         /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
         flt64_t tmp = {.u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64};
         --tmp.d;
-        ixe = ((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) + EMIN_DP64;
+        ixe = ((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) + (uint64_t)EMIN_DP64;
         ixm = tmp.u & MANTBITS_DP64;
     }
 
