@@ -50,14 +50,12 @@
  *     2*ax <= ay  -> n=0, result = x
  *     2*ax >  ay  -> n=1, result = sign(x)*(ax - ay) [exact by Sterbenz]
  *
- *   Single-precision path (ax > ay, d <= 24):
- *     q = trunc(ax/ay) via vdivss + vroundss (XMM-only, no integer roundtrip).
- *     r = ax - q*ay via vfnmadd231ss.
- *     If r in [0, ay): apply nearest-even tie-break entirely in float.
- *       Tie (2*r == ay): adjust iff n is odd. Parity: n_f is a float
- *       integer in [1, 2^24], so n_f/2 is exact iff n is even; check with
- *       __builtin_truncf(n_f * 0.5f) * 2.0f != n_f.
- *     If r >= ay (d > 24, n was too low) or r < 0: fall back to double.
+ *   Single-precision path (ax > ay, exponent diff <= ~24):
+ *     n = rintf(ax/ay) via vdivss + vroundss nearest-even (XMM-only).
+ *     r = ax - n*ay via vfnmadd231ss.
+ *     If r in [0, ay): result is exact, return immediately.
+ *     If r < 0 (rintf rounded up) or r >= ay (exponent diff > ~24,
+ *     n_f lost low bits): fall back to double.
  *
  *   Large-exponent path (d > 52): 24-bit chunk reduction, then single step.
  *
@@ -95,7 +93,7 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
     /*
      * Single branch for all special cases.  For normal finite non-zero
      * inputs ax,ay in [1, 0x7f7fffff], so ax-1u and ay-1u are each at most
-     * 0x7f7ffffe — both strictly below 0x7f7fffffu.  The branch is taken
+     * 0x7f7ffffe -- both strictly below 0x7f7fffffu.  The branch is taken
      * only when at least one of x, y is zero, Inf, or NaN.
      */
     if (unlikely((ax - 1u) >= 0x7f7fffffu || (ay - 1u) >= 0x7f7fffffu)) {
@@ -110,7 +108,7 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
             return __alm_handle_errorf(0xffc00000u, AMD_F_INVALID);
         /*
          * x=Inf is invalid regardless of y (even if y is a quiet NaN):
-         * check before QNaN propagation so remainder(Inf, QNaN) → FE_INVALID.
+         * check before QNaN propagation so remainder(Inf, QNaN) -> FE_INVALID.
          */
         if (ax == 0x7f800000u)
             return __alm_handle_errorf(0xffc00000u, AMD_F_INVALID);
@@ -148,47 +146,38 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
 
     /*
      * |x| > |y|.  Attempt single-precision reduction first.
-     * vroundss (via __builtin_truncf) and vfnmadd231ss stay entirely in
-     * XMM registers, avoiding the integer-register roundtrip of vcvttss2si.
+     * rintf rounds the quotient to the nearest integer with ties-to-even,
+     * which is exactly the n required by IEEE 754 remainder.  The compiler
+     * emits vdivss + vroundss (nearest-even mode) + vfnmadd231ss, staying
+     * entirely in XMM registers.
+     *
+     * r_f can be negative when rintf rounds up (q fractional part > 0.5),
+     * and can be >= fay only when the exponent difference exceeds ~24 bits
+     * (single precision runs out of mantissa bits for the quotient).
+     * Both cases fall through to the double-precision path below.
      */
     float q_f = fax / fay;                   /* vdivss */
-    float n_f = __builtin_truncf(q_f);       /* vroundss trunc-to-zero */
+    float n_f = rintf(q_f);                  /* vroundss nearest-even */
     float r_f = fmaf(-n_f, fay, fax);        /* vfnmadd231ss */
 
     /*
-     * Check 0 <= r_f < fay via a single unsigned integer comparison.
-     * For positive IEEE 754 floats, the uint32 representation is monotone,
-     * so F2U(r_f) < F2U(fay) iff 0.0f <= r_f < fay (NaN aside, and fay
-     * is finite and positive here).
+     * Fast return: r_f is the exact remainder when it falls in (-fay, fay).
+     * Using the unsigned integer trick: for positive IEEE 754 floats the
+     * bit pattern is monotone, so F2U(r_f) < ay iff 0.0f <= r_f < fay.
+     * Negative r_f has its sign bit set, so F2U gives a large value >= ay.
      */
     if (likely(F2U(r_f) < ay)) {
-        /*
-         * Float remainder is in [0, ay).  Apply nearest-even tie-break
-         * entirely in float to avoid vcvtss2sd conversions.
-         *
-         * Tie condition: 2*r_f == fay.  When it holds, n must be rounded
-         * to even.  n_f is a float integer in [1, 2^24]; it is odd iff
-         * __builtin_truncf(n_f * 0.5f) * 2.0f != n_f.
-         */
-        float r2_f = r_f + r_f;
-        if (r2_f > fay) {
-            r_f -= fay;
-        } else if (r2_f == fay) {
-            /* Tie: subtract fay iff n_f is odd. */
-            float half_n = __builtin_truncf(n_f * 0.5f);
-            if (half_n + half_n != n_f)   /* n_f is odd */
-                r_f -= fay;
-        }
         if (r_f == 0.0f)
             return copysignf(0.0f, x);
         return (ix & 0x80000000u) ? -r_f : r_f;
     }
 
     /*
-     * Float path inaccurate: r_f < 0 (q_f overflowed to inf, e.g. fax/fay
-     * where fay is a tiny denormal) or r_f >= fay (n_f too low, d > 24).
+     * Float path inaccurate: r_f < 0 (rintf rounded up, or fay is a tiny
+     * denormal causing q_f to overflow to inf) or r_f >= fay (exponent
+     * difference > ~24 bits, n_f lost low bits).
      *
-     * Compute exponent gap to choose double-correction vs chunk reduction.
+     * Recompute entirely in double, using rint for nearest-even rounding.
      */
     double adx = (double)fax;
     double ady = (double)fay;
@@ -199,25 +188,11 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
     int32_t d    = xe_d - ye_d;
 
     if (likely(d <= 52)) {
-        /*
-         * r_f >= fay (or r_f < 0 due to overflow): correct n_d in double.
-         */
-        double n_d = (double)n_f;
-        if (r_f < 0.0f)
-            n_d -= 1.0;
-        else
-            n_d += 1.0;
+        double n_d = rint(adx / ady);
         double r = fma(-n_d, ady, adx);
-        if (unlikely(r < 0.0)) { r += ady; n_d -= 1.0; }
-
-        double r2 = r + r;
-        if (r2 > ady) {
-            r -= ady;
-        } else if (r2 == ady) {
-            int64_t n_i = (int64_t)n_d;
-            if (n_i & 1)
-                r -= ady;
-        }
+        /* r can be slightly outside (-ady, ady) due to double rounding. */
+        if (unlikely(r >= ady))       r -= ady;
+        else if (unlikely(r < -ady))  r += ady;
         if (r == 0.0)
             return copysignf(0.0f, x);
         float rf = (float)(r < 0.0 ? -r : r);
