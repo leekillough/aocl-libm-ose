@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -17,17 +17,64 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
  * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
  * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  *
+ */
+
+/*
+ * float remainderf(float x, float y)
+ *
+ * Returns x - n*y where n = rint(x/y) (nearest-even integer).
+ *
+ * Algorithm (matches Intel IMF z0 structure):
+ *
+ *   Single combined special-case check:
+ *     (ax - 1u) >= 0x7f7fffff || (ay - 1u) >= 0x7f7fffff
+ *   fires iff any of: x=NaN, x=Inf, y=NaN, y=Inf, y=0, x=0.
+ *   Normal finite non-zero inputs have ax,ay in [1, 0x7f7fffff], so
+ *   each of ax-1u, ay-1u is at most 0x7f7ffffe < 0x7f7fffff.
+ *   ay=0: ay-1u wraps to 0xffffffff >= 0x7f7fffff.
+ *   ax=0: ax-1u wraps to 0xffffffff >= 0x7f7fffff.
+ *   x/y=Inf (0x7f800000): ax/ay-1u = 0x7f7fffff >= 0x7f7fffff.
+ *   x/y=NaN (> 0x7f800000): ax/ay-1u >= 0x7f800000 > 0x7f7fffff.
+ *   Note: OR of two values each <= 0x7f7ffffe can reach 0x7f7fffff
+ *   (false positive for FLT_MAX pairs), so test each operand separately.
+ *
+ *   Work with ax = |x|, ay = |y|; apply sign of x at end.
+ *
+ *   Fast path (ax <= ay): n is 0 or 1, no division needed.
+ *     2*ax <= ay  -> n=0, result = x
+ *     2*ax >  ay  -> n=1, result = sign(x)*(ax - ay) [exact by Sterbenz]
+ *
+ *   Single-precision path (ax > ay, d <= 24):
+ *     q = trunc(ax/ay) via vdivss + vroundss (XMM-only, no integer roundtrip).
+ *     r = ax - q*ay via vfnmadd231ss.
+ *     If r in [0, ay): apply nearest-even tie-break entirely in float.
+ *       Tie (2*r == ay): adjust iff n is odd. Parity: n_f is a float
+ *       integer in [1, 2^24], so n_f/2 is exact iff n is even; check with
+ *       __builtin_truncf(n_f * 0.5f) * 2.0f != n_f.
+ *     If r >= ay (d > 24, n was too low) or r < 0: fall back to double.
+ *
+ *   Large-exponent path (d > 52): 24-bit chunk reduction, then single step.
+ *
+ * Special cases (IEEE 754):
+ *   remainder(x,   0) -> NaN, invalid
+ *   remainder(Inf, y) -> NaN, invalid  (even if y is a quiet NaN)
+ *   remainder(SNaN, y) -> NaN, invalid
+ *   remainder(x, SNaN) -> NaN, invalid
+ *   remainder(QNaN, y) -> QNaN         (quiet, no exception)
+ *   remainder(x, QNaN) -> QNaN         (quiet, no exception)
+ *   remainder(x, Inf) -> x             (finite x)
+ *   remainder(0,   y) -> 0             (sign preserved)
  */
 
 #include <stdint.h>
 #include <math.h>
-#include <float.h>
+#include <string.h>
 
 #include "libm_macros.h"
 #include "libm_util_amd.h"
@@ -36,145 +83,173 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
+static inline uint32_t F2U(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+
 float ALM_PROTO_OPT(remainderf)(float x, float y)
 {
+    uint32_t ix = F2U(x);
+    uint32_t iy = F2U(y);
+    uint32_t ax = ix & 0x7fffffffu;
+    uint32_t ay = iy & 0x7fffffffu;
 
-    uint32_t fax, fay;
-
-    fax = asuint32(x);
-    fay = asuint32(y);
-
-    fax &= ~SIGNBIT_SP32;
-    fay &= ~SIGNBIT_SP32;
-
-    // Input value checks for NAN, INF
-    if(fay == 0)
-    {
-        return (x*y)/(x*y);
+    /*
+     * Single branch for all special cases.  For normal finite non-zero
+     * inputs ax,ay in [1, 0x7f7fffff], so ax-1u and ay-1u are each at most
+     * 0x7f7ffffe — both strictly below 0x7f7fffffu.  The branch is taken
+     * only when at least one of x, y is zero, Inf, or NaN.
+     */
+    if (unlikely((ax - 1u) >= 0x7f7fffffu || (ay - 1u) >= 0x7f7fffffu)) {
+        /*
+         * Signaling NaN (SNaN): exponent=0xff, quiet bit (bit 22) clear,
+         * mantissa non-zero.  Uint32 range [0x7f800001, 0x7fbfffff].
+         * Per IEEE 754, any SNaN operand raises FE_INVALID.
+         * Test: subtract 0x7f800001; result < 0x003fffff iff SNaN.
+         */
+        if ((ax - 0x7f800001u) < 0x003fffffu ||
+            (ay - 0x7f800001u) < 0x003fffffu)
+            return __alm_handle_errorf(0xffc00000u, AMD_F_INVALID);
+        /*
+         * x=Inf is invalid regardless of y (even if y is a quiet NaN):
+         * check before QNaN propagation so remainder(Inf, QNaN) → FE_INVALID.
+         */
+        if (ax == 0x7f800000u)
+            return __alm_handle_errorf(0xffc00000u, AMD_F_INVALID);
+        /* Quiet NaN: propagate without raising an exception. */
+        if (ax > 0x7f800000u) return x;              /* x=QNaN */
+        if (ay > 0x7f800000u) return y;              /* y=QNaN */
+        /* y=0: invalid (x is confirmed finite non-zero here). */
+        if (ay == 0u)
+            return __alm_handle_errorf(0xffc00000u, AMD_F_INVALID);
+        return x;                                     /* y=Inf or x=0 */
     }
 
-    if(unlikely((fax & EXPBITS_SP32) >= EXPBITS_SP32))
-    {
-        // X is NAN or INF
-        if( (fax & EXPBITS_SP32) == EXPBITS_SP32)
-            return __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
+    /*
+     * Reconstruct |x| and |y| as floats.  IEEE 754 positive floats are
+     * monotone in their integer representation, so ax <= ay iff |x| <= |y|.
+     */
+    float fax, fay;
+    memcpy(&fax, &ax, 4);
+    memcpy(&fay, &ay, 4);
+
+    /*
+     * Fast path: |x| <= |y|.  n is 0 or 1; no division needed.
+     * 2*fax is exact (no overflow: ax < 0x7f800000).
+     * fax - fay is exact by Sterbenz (fay/2 < fax <= fay for n=1 case).
+     */
+    if (likely(ax <= ay)) {
+        float ax2 = fax + fax;
+        if (ax2 <= fay)
+            return x;              /* n=0 (includes tie 2|x|==|y|: rounds to 0) */
+        float r = fax - fay;       /* exact by Sterbenz, n=1 */
+        if (r == 0.0f)
+            return copysignf(0.0f, x);
+        return (ix & 0x80000000u) ? -r : r;
+    }
+
+    /*
+     * |x| > |y|.  Attempt single-precision reduction first.
+     * vroundss (via __builtin_truncf) and vfnmadd231ss stay entirely in
+     * XMM registers, avoiding the integer-register roundtrip of vcvttss2si.
+     */
+    float q_f = fax / fay;                   /* vdivss */
+    float n_f = __builtin_truncf(q_f);       /* vroundss trunc-to-zero */
+    float r_f = fmaf(-n_f, fay, fax);        /* vfnmadd231ss */
+
+    /*
+     * Check 0 <= r_f < fay via a single unsigned integer comparison.
+     * For positive IEEE 754 floats, the uint32 representation is monotone,
+     * so F2U(r_f) < F2U(fay) iff 0.0f <= r_f < fay (NaN aside, and fay
+     * is finite and positive here).
+     */
+    if (likely(F2U(r_f) < ay)) {
+        /*
+         * Float remainder is in [0, ay).  Apply nearest-even tie-break
+         * entirely in float to avoid vcvtss2sd conversions.
+         *
+         * Tie condition: 2*r_f == fay.  When it holds, n must be rounded
+         * to even.  n_f is a float integer in [1, 2^24]; it is odd iff
+         * __builtin_truncf(n_f * 0.5f) * 2.0f != n_f.
+         */
+        float r2_f = r_f + r_f;
+        if (r2_f > fay) {
+            r_f -= fay;
+        } else if (r2_f == fay) {
+            /* Tie: subtract fay iff n_f is odd. */
+            float half_n = __builtin_truncf(n_f * 0.5f);
+            if (half_n + half_n != n_f)   /* n_f is odd */
+                r_f -= fay;
+        }
+        if (r_f == 0.0f)
+            return copysignf(0.0f, x);
+        return (ix & 0x80000000u) ? -r_f : r_f;
+    }
+
+    /*
+     * Float path inaccurate: r_f < 0 (q_f overflowed to inf, e.g. fax/fay
+     * where fay is a tiny denormal) or r_f >= fay (n_f too low, d > 24).
+     *
+     * Compute exponent gap to choose double-correction vs chunk reduction.
+     */
+    double adx = (double)fax;
+    double ady = (double)fay;
+    uint64_t adx_bits = asuint64(adx);
+    uint64_t ady_bits = asuint64(ady);
+    int32_t xe_d = (int32_t)(adx_bits >> 52);
+    int32_t ye_d = (int32_t)(ady_bits >> 52);
+    int32_t d    = xe_d - ye_d;
+
+    if (likely(d <= 52)) {
+        /*
+         * r_f >= fay (or r_f < 0 due to overflow): correct n_d in double.
+         */
+        double n_d = (double)n_f;
+        if (r_f < 0.0f)
+            n_d -= 1.0;
         else
-           #ifdef WINDOWS
-              __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
-           #else
-              return x + x;
-           #endif
-    }
+            n_d += 1.0;
+        double r = fma(-n_d, ady, adx);
+        if (unlikely(r < 0.0)) { r += ady; n_d -= 1.0; }
 
-    if(fax == fay)
-    {
-        return (0.0f * x);
-    }
-
-    double dx = (double)x;
-    double dy = (double)y;
-
-    uint64_t ax = asuint64(dx);
-    uint64_t ay = asuint64(dy);
-
-    ax &= POS_BITSET_DP64;
-    ay &= POS_BITSET_DP64;
-
-    double adx = asdouble(ax);
-    double ady = asdouble(ay);
-
-    uint64_t xe = (EXPBITS_DP64 & ax) >> 52;
-    uint64_t ye = (EXPBITS_DP64 & ay) >> 52;
-
-    if(adx < ady)
-    {
-        double temp = 0.5 * ady;
-        if(adx > temp)
-        {
-            adx -= ady;
+        double r2 = r + r;
+        if (r2 > ady) {
+            r -= ady;
+        } else if (r2 == ady) {
+            int64_t n_i = (int64_t)n_d;
+            if (n_i & 1)
+                r -= ady;
         }
-
-        if(x == 0)
-        {
-            return x;
-        }
-        else if(x > 0)
-        {
-            return (float)adx;
-        }
-        else
-        {
-            adx = 0 - adx;
-            return (float)adx;
-        }
+        if (r == 0.0)
+            return copysignf(0.0f, x);
+        float rf = (float)(r < 0.0 ? -r : r);
+        uint32_t sign_r = (r < 0.0) ? 0x80000000u : 0u;
+        uint32_t result_bits = F2U(rf) | ((ix & 0x80000000u) ^ sign_r);
+        float ret;
+        memcpy(&ret, &result_bits, 4);
+        return ret;
     }
 
-    int64_t scale = 0x3FF0000000000000;
-    int64_t quo = 0;
-
-    if(ye < xe)
+    /*
+     * d > 52: multi-step 24-bit chunk reduction.
+     */
     {
-        int64_t diff_exp = (int64_t)(xe - ye);
-        quo = diff_exp / 24;
-
-        scale = 24 * quo;
-        scale += 1023;
-        scale = scale << 52;
-    }
-
-    double w = asdouble((uint64_t)scale) * ady;
-    double two_p_MINUS_24 = asdouble(0x3E70000000000000);
-    double t=0, temp2=0;
-
-    while(1)
-    {
-        quo--;
-        if(quo < 0)
-        {
-            break;
+        int32_t nsteps = d / 24;
+        double two_p_minus24 = asdouble(UINT64_C(0x3e70000000000000));  /* 2^-24 */
+        uint64_t wu = ady_bits + ((uint64_t)(24 * nsteps) << 52);
+        double w = asdouble(wu);
+        for (int32_t i = 0; i < nsteps; i++) {
+            uint64_t q = (uint64_t)(adx / w);
+            adx -= (double)q * w;
+            w *= two_p_minus24;
         }
-
-        t = adx / w;
-        uint64_t tu = (uint64_t)t;
-        t = (double)(tu);
-
-        t *= w;
-        w *= two_p_MINUS_24;
-        adx -= t;
+        double n = rint(adx / w);
+        adx = fma(-n, w, adx);
+        if (adx == 0.0)
+            return copysignf(0.0f, x);
+        float rf = (float)(adx < 0.0 ? -adx : adx);
+        uint32_t sign_r = (adx < 0.0) ? 0x80000000u : 0u;
+        uint32_t result_bits = F2U(rf) | ((ix & 0x80000000u) ^ sign_r);
+        float ret;
+        memcpy(&ret, &result_bits, 4);
+        return ret;
     }
-
-    temp2 = adx / w;
-    uint64_t tu = (uint64_t)temp2;
-    temp2 = (double)(tu);
-
-    int32_t todd = ((int64_t)(dx / w)) & 1;
-    double temp3 = temp2 * w;
-    adx -= temp3;
-
-    double w_half = 0.5 * w;
-
-    if( (todd == 1) && (w_half == adx) )
-    {
-        adx = adx - w;
-        if(dx<0)
-        {
-            adx = 0.0 - adx;
-        }
-        return (float)adx;
-    }
-
-    if(w_half >= adx)
-    {
-        if(dx<0)
-        {
-            adx = 0.0 - adx;
-        }
-        return (float)adx;
-    }
-    adx = adx - w;
-    if(dx<0)
-    {
-        adx = 0.0 - adx;
-    }
-    return (float)adx;
 }
