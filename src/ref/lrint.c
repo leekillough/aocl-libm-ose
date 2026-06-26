@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -29,28 +29,24 @@
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
 
-
-long int ALM_PROTO_REF(lrint)(double x)
+long ALM_PROTO_REF(lrint)(double x)
 {
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
+    (defined(__x86_64__) || defined(_M_X64))
+    long r;
+    __asm__("cvtsd2si %1, %0" : "=r"(r) : "x"(x));
+    return r;
+#else
+    UT64 checkbits, val_2p52;
+    checkbits.f64 = x;
 
-    UT64 checkbits,val_2p52;
-    checkbits.f64=x;
-
-    /* Clear the sign bit and check if the value can be rounded */
-
-    if( (checkbits.u64 & 0x7FFFFFFFFFFFFFFF) > 0x4330000000000000)
-    {
-        /* number cant be rounded raise an exception */
-        /* Number exceeds the representable range could be nan or inf also*/
-        __alm_handle_error((unsigned long long) x, 0);
-	   return (long int) x;
+    if ((checkbits.u64 & 0x7FFFFFFFFFFFFFFF) > 0x4330000000000000) {
+        __alm_handle_error((unsigned long long)x, 0);
+        return (long)x;
     }
 
     val_2p52.u32[1] = (checkbits.u32[1] & 0x80000000) | 0x43300000;
     val_2p52.u32[0] = 0;
-
-	/* Add and sub 2^52 to round the number according to the current rounding direction */
-
-    return (long int) ((x + val_2p52.f64) - val_2p52.f64);
+    return (long)((x + val_2p52.f64) - val_2p52.f64);
+#endif
 }
-

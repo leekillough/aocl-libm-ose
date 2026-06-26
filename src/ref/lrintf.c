@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -29,28 +29,23 @@
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
 
-
-long int ALM_PROTO_REF(lrintf)(float x)
+long ALM_PROTO_REF(lrintf)(float x)
 {
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
+    (defined(__x86_64__) || defined(_M_X64))
+    long r;
+    __asm__("cvtss2si %1, %0" : "=r"(r) : "x"(x));
+    return r;
+#else
+    UT32 checkbits, val_2p23;
+    checkbits.f32 = x;
 
-    UT32 checkbits,val_2p23;
-    checkbits.f32=x;
-
-    /* Clear the sign bit and check if the value can be rounded */
-
-    if( (checkbits.u32 & 0x7FFFFFFF) > 0x4B000000)
-    {
-        /* number cant be rounded raise an exception */
-        /* Number exceeds the representable range could be nan or inf also*/
-        __alm_handle_errorf((unsigned long long) x, 0);
+    if ((checkbits.u32 & 0x7FFFFFFF) > 0x4B000000) {
+        __alm_handle_errorf((unsigned long long)x, 0);
         return (long)x;
     }
 
-
     val_2p23.u32 = (checkbits.u32 & 0x80000000) | 0x4B000000;
-
-   /* Add and sub 2^23 to round the number according to the current rounding direction */
-
-    return (long int) ((x + val_2p23.f32) - val_2p23.f32);
+    return (long)((x + val_2p23.f32) - val_2p23.f32);
+#endif
 }
-
