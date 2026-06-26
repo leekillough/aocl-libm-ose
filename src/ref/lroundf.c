@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -28,102 +28,26 @@
 #include "libm_util_amd.h"
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <string.h>
 
-long int ALM_PROTO_REF(lroundf)(float f)
+long ALM_PROTO_REF(lroundf)(float x)
 {
-    UT32 u32d;
-    UT32 u32Temp,u32result;
-    int intexp, shift;
-    U32 sign;
-    long int  result;
-
-    u32d.f32 = u32Temp.f32 = f;
-    if ((u32d.u32 & 0X7F800000) == 0x7F800000)
-    {
-        /*else the number is infinity*/
-	//Raise range or domain error
-        {
-            #ifdef WIN64
-            __alm_handle_errorf(SIGNBIT_SP32, AMD_F_NONE);
-            return (long int)SIGNBIT_SP32;
-            #else
-            if((u32d.u32 & 0x7fffffff) == 0x7f800000)
-                return (long)SIGNBIT_DP64;
-            if((u32d.u32 & 0x7fffffff) >= 0x7fc00000)
-                __alm_handle_errorf((unsigned int)SIGNBIT_DP64,
-                                                          AMD_F_NONE);
-            else
-                __alm_handle_errorf((unsigned int)SIGNBIT_DP64,
-                                                       AMD_F_INVALID);
-            
-            return (long)SIGNBIT_DP64; /*GCC returns this when the number is out of range*/
-            #endif
-        }
+    uint32_t ui;
+    memcpy(&ui, &x, sizeof(ui));
+    ui = (ui & 0x80000000U) | 0x3F000000U;
+    float half;
+    memcpy(&half, &ui, sizeof(half));
+#if defined(_WIN64) || defined(_WIN32)
+    /* >= on the lower bound because -0x1.0p+31f is -2^31 = LONG_MIN, which is valid */
+    if (unlikely(!(x >= -0x1.0p+31f && x < 0x1.0p+31f))) {
+        __alm_handle_errorf(0x80000000ULL, AMD_F_NONE);
+        return (long)0x80000000;
     }
-
-    u32Temp.u32 &= 0x7FFFFFFF;
-    intexp = (u32d.u32 & 0x7F800000) >> 23;
-    sign = u32d.u32 & 0x80000000;
-    intexp -= 0x7F;
-
-    /* 1.0 x 2^-1 is the smallest number which can be rounded to 1 */
-    if (intexp < -1)
-        return (0);
-
-
-#ifdef WIN64
-    /* 1.0 x 2^31 is already too large */
-    if (intexp >= 31)
-    {
-        result = 0x80000000;
-	    __alm_handle_errorf(result, AMD_F_NONE);
-        return result;
-	}
-
 #else
-    /* 1.0 x 2^31 (or 2^63) is already too large */
-    if (intexp >= 63)
-    {
-        result = (long)0x8000000000000000L;
-        __alm_handle_errorf((unsigned long long)result, AMD_F_NONE);
-	    return result;
+    if (unlikely(!(x >= -0x1.0p+63f && x < 0x1.0p+63f))) {
+        __alm_handle_errorf(0x8000000000000000ULL, AMD_F_NONE);
+        return (long)0x8000000000000000ULL;
     }
- #endif
-
-    u32result.f32 = u32Temp.f32;
-
-    /* >= 2^23 is already an exact integer */
-    if (intexp < 23)
-    {
-        /* add 0.5, extraction below will truncate */
-        u32result.f32 = u32Temp.f32 + 0.5F;
-    }
-    intexp = (u32result.u32 & 0x7f800000) >> 23;
-    intexp -= 0x7f;
-    u32result.u32 &= 0x7fffff;
-    u32result.u32 |= 0x00800000;
-
-    result = u32result.u32;
-
-    #ifdef WIN64
-    shift = intexp - 23;
-    #else
-
-    /*Since float is only 32 bit for higher accuracy we shift the result by 32 bits
-     * In the next step we shift an extra 32 bits in the reverse direction based
-     * on the value of intexp*/
-    result = result << 32;
-    shift = intexp - 55; /*55= 23 +32*/
-    #endif
-
-    if(shift < 0)
-        result = result >> (-shift);
-    if(shift > 0)
-        result = result << (shift);
-
-    if (sign)
-        result = -result;
-
-    return result;
+#endif
+    return (long)(x + half);
 }
-
