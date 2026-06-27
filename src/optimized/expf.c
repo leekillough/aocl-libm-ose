@@ -133,11 +133,13 @@ ALM_PROTO_OPT(expf)(float x)
     uint32_t ix = asuint32(x);
 
     if (unlikely((ix & 0x7FFFFFFFU) >= 0x42C00000U)) {
+        if ((ix & 0x7FFFFFFFU) > PINFBITPATT_SP32)      /* NaN */
+            return __alm_handle_errorf(ix | QNAN_MASK_32,
+                                       (ix & QNAN_MASK_32) ? AMD_F_NONE
+                                                           : AMD_F_INVALID);
+
         if (ix == 0xFF800000U)   /* -inf: exp(-inf) = 0 */
             return 0.0f;
-
-        if ((ix & 0x7FFFFFFFU) > 0x7F800000U)  /* NaN: propagate */
-            return x;
 
         if (x > EXPF_FARG_MAX) {
             if (ix == PINFBITPATT_SP32)
