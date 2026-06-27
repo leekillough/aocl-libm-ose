@@ -110,13 +110,6 @@ static const struct expf_data expf_v2_data = {
 #define EXPF_FARG_MAX  0x1.62e42ep6f    /* log(0x1p128)  ~=   88.72  */
 
 
-static uint32_t
-top12f(float x)
-{
-    flt32_t f = {.f = x};
-    return f.u >> 20;
-}
-
 /******************************************
 * Implementation Notes
 * ---------------------
@@ -137,26 +130,25 @@ ALM_PROTO_OPT(expf)(float x)
     double_t  q, dn, r, z;
     uint64_t n, j;
 
-    uint32_t top = top12f(x);
+    uint32_t ix = asuint32(x);
 
-    if (unlikely (top > top12f(88.0f))) {
-        if(x != x)
-            return x;
-
-        if (asuint32(x) == asuint32(-INFINITY))
+    if (unlikely((ix & 0x7FFFFFFFU) >= 0x42C00000U)) {
+        if (ix == 0xFF800000U)   /* -inf: exp(-inf) = 0 */
             return 0.0f;
 
-        if (x > EXPF_FARG_MAX){
-            if(asuint32(x) == PINFBITPATT_SP32)
-                return asfloat(PINFBITPATT_SP32);
+        if ((ix & 0x7FFFFFFFU) > 0x7F800000U)  /* NaN: propagate */
+            return x;
+
+        if (x > EXPF_FARG_MAX) {
+            if (ix == PINFBITPATT_SP32)
+                return INFINITY;
 
             /* Raise FE_OVERFLOW, FE_INEXACT */
-            return alm_expf_special(asfloat(PINFBITPATT_SP32),  ALM_E_IN_X_INF);
+            return alm_expf_special(INFINITY, ALM_E_IN_X_INF);
         }
 
-        if (x < EXPF_FARG_MIN){
+        if (x < EXPF_FARG_MIN)
             return alm_expf_special(0.0, ALM_E_IN_X_ZERO);
-        }
     }
 
     z = (double_t)x * EXPF_TBLSZ_BY_LN2;
