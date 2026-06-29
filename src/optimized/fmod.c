@@ -27,15 +27,22 @@
 
 /******************************************
  * Implementation Notes:
- * This is a literal translation of ASM routine for fmod + optimizations
  *
  * Prototype:
  * double fmod(double x, double y)
  *
  * Algorithm:
- * As designed in the ASM fmod double variant routine.
- * The same algorithm is extended into C,
- * with optimizations wherever possible.
+ * fmod(x, y) = x - n*y, where n = trunc(x/y).
+ *
+ * Fast path (normal x and y with exponent difference <= 52):
+ *   n = trunc(|x|/|y|) fits in a uint64_t < 2^53, so a single FMA
+ *   computes |x| - n*|y| exactly (the result is always representable).
+ *
+ * General path (subnormals, or exponent difference > 52):
+ *   Reduce in 52-bit chunks: find the largest w = |y| * 2^(52*k) such
+ *   that w <= |x|, do one Dekker-exact reduction step, divide w by 2^52,
+ *   repeat until w == |y|. Isolated in a cold helper to keep the fast
+ *   path's XMM register pressure low.
  *
  */
 
@@ -50,110 +57,83 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-#define BIT_MASK_27_BITS 0xfffffffff8000000
+#define BIT_MASK_27_BITS 0xfffffffff8000000ULL
 
-#define FMOD_X_NAN   1
-#define FMOD_Y_ZERO  2
-#define FMOD_X_INF   3
+/* General path for subnormals or exponent difference > 52.
+ * Kept out-of-line and cold so the fast path saves no XMM registers. */
+NOINLINE_COLD
+static double fmod_general(double adx, double ady, double x)
+{
+    double w = ady;
+    double t = adx * 0x1p-52;
+    while(w <= t)
+        w *= 0x1p52;
+    while(1) {
+        double tw = w <= ady ? ady : w;
+        uint64_t aw = asuint64(tw);
+        double r = (double)(uint64_t)(adx / tw);
+        uint64_t ur = asuint64(r);
+        double hy = asdouble(aw & BIT_MASK_27_BITS);
+        double hr = asdouble(ur & BIT_MASK_27_BITS);
+        double ty = tw - hy;
+        double tr = r - hr;
+        double cc = (((hy*hr - r*tw) + hy*tr) + ty*hr) + tr*ty;
+        double c = r*tw;
+        double v = adx - c;
+        double res = (((adx - v) - c) - cc) + v;
+        adx = res < 0 ? res + tw : res;
+        if(w <= ady)
+            return copysign(adx, x);
+        w *= 0x1p-52;
+    }
+}
 
 double ALM_PROTO_OPT(fmod)(double x, double y)
 {
-    uint64_t ax, ay;
-
-    ax = asuint64(x);
-    ay = asuint64(y);
-
-    ax &= ~SIGNBIT_DP64;
-    ay &= ~SIGNBIT_DP64;
+    uint64_t ay = asuint64(y) & ~SIGNBIT_DP64;
 
     /* Check if y is NaN. If yes return NaN */
     if(unlikely(ay > POS_INF_F64))
-    {
         return x * y;
-    }
 
-    /* Check if y is Zero. If yes, return NaN and raise exception*/
+    /* Check if y is Zero. If yes, return NaN and raise exception */
     if(unlikely(ay == 0))
-    {
-        return _fmod_special(x, asdouble(ay | QNANBITPATT_DP64), FMOD_Y_ZERO);
-    }
+        return __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
+
+    uint64_t ax = asuint64(x) & ~SIGNBIT_DP64;
+
     /* Check if x is NaN or INF */
     if(unlikely((ax & EXPBITS_DP64) >= EXPBITS_DP64))
     {
-        /* X is NaN. Return NaN */
+        /* x is NaN. Return NaN */
         if(ax > POS_INF_F64)
-        {
-            return x;
+            return x + x;
 
-        }
-        /* X is INF. Return NaN and raise exception */
-        else
-        {
-            return _fmod_special(x, asdouble(ay | QNANBITPATT_DP64), FMOD_X_INF);
-        }
+        /* x is INF. Return NaN and raise exception */
+        return __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
     }
 
     if(ax == ay)
-    {
-        return 0.0;
-    }
+        return copysign(0.0, x);
 
     double adx = asdouble(ax);
     double ady = asdouble(ay);
 
-    // Exponents of x and y
+    if(adx < ady)
+        return x;
+
+    /* Biased exponents (0 for subnormals) */
     uint64_t xe = (EXPBITS_DP64 & ax) >> 52;
     uint64_t ye = (EXPBITS_DP64 & ay) >> 52;
 
-    if(adx < ady)
-    {
-        return x;
-    }
+    if(unlikely(xe == 0 || ye == 0 || (int64_t)(xe - ye) > 52))
+        return fmod_general(adx, ady, x);
 
-    int64_t diff_exp = (int64_t)(xe - ye);
-    if(xe == 0 || ye == 0 || diff_exp > 52)
-    {
-        /* This is a special case of fmod function applicable only for double variant.
-         * The x87 assembly instruction FPREM1 (Floating Point Partial fmod) has to be used for accurate calculation.
-         * Since its equivalent intrinsic is not available in C, the assembly variant is called here directly instead.
-         */
-        double result = __amd_bas64_fmod(x, y);
-        return result;
-    }
-
-    double r = adx/ady;
-    uint64_t temp = (uint64_t)r;
-    r = (double)(temp);
-
-    // Quad-Precision Multiplication of r and y
-    uint64_t ur = asuint64(r);
-    uint64_t uhy = ay & BIT_MASK_27_BITS;
-    uint64_t uhr = ur & BIT_MASK_27_BITS;
-
-    double hy = asdouble(uhy);
-    double hr = asdouble(uhr);
-    double ty = ady - hy;
-    double tr = r - hr;
-
-    double cc = (((((hy*hr) - (r*ady)) + (hy*tr)) + (ty*hr)) + (tr*ty));
-
-    double c = r*ady;
-    double v = adx - c;
-
-    double w = (((adx - v) - c) - cc);
-
-    w += v;
-
+    /* Fast path: normal x and y with diff_exp <= 52.
+     * n = trunc(|x|/|y|) < 2^53, so the FMA computes |x| - n*|y| exactly. */
+    double r = (double)(uint64_t)(adx / ady);
+    double w = __builtin_fma(-r, ady, adx);
     if(w < 0)
-    {
-        w = w + ady;
-    }
-
-    if(x > 0)
-    {
-        return w;
-    }
-    w = 0.0 - w;
-
-    return w;
+        w += ady;
+    return copysign(w, x);
 }
