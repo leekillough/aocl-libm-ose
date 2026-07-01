@@ -307,6 +307,17 @@ test_cbrtf_conformance_data[] = {
    {0x42c80000,0x409487e5}, // 100
    {0x718f0f0f,0x50275c7a}, // 1.416786E+30
    {0x00080000,0x29cb2ff5}, // 2^-130
+
+   // Values from the range [0.1, 10000] that were not previously covered;
+   // these exposed a 3-ULP error in the pure-float implementation.
+   {0x3dcccccd, 0x3eeda63c, 0},  // cbrtf(0.1)
+   {0x4050f6ec, 0x3fbde472, 0},  // cbrtf(3.265071)
+   {0x40c251a4, 0x3fe9862a, 0},  // cbrtf(6.072466)
+   {0x4140b80b, 0x4012b4c1, 0},  // cbrtf(12.044932)
+   {0x41a010d7, 0x402dbf1d, 0},  // cbrtf(20.008223)
+   {0x41efb2dc, 0x4046c795, 0},  // cbrtf(29.962334)
+   {0x420fbd3c, 0x40533219, 0},  // cbrtf(35.934799)
+   {0x461c3809, 0x41ac57e5, 0},  // cbrtf(9998.009)
 };
 
 

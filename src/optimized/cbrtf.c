@@ -108,17 +108,21 @@ ALM_PROTO_OPT(cbrtf)(float x) {
     /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
     uint32_t tidx = ixm >> 15;
 
-    /* Reciprocal-reduce: r = mf * Recip[tidx] - 1, |r| < 1/512. */
-    float r = mf * FloatReciprocalTable[tidx] - 1.0f;
+    /*
+     * Reciprocal-reduce and polynomial in double precision to avoid
+     * accumulation of float rounding errors across the multiply chain.
+     * The conversion float->double is exact; only the final result is
+     * rounded back to float via copysignf.
+     */
+    double rd = (double)mf * (double)FloatReciprocalTable[tidx] - 1.0;
 
     /* Horner 2-term: cbrt(1+r) - 1 ~= r*(1/3 + r*(-1/9)). */
-    float t = r * (1.0f/3.0f + r * (-1.0f/9.0f));
+    double td = rd * (1.0/3.0 + rd * (-1.0/9.0));
 
-    /* Scale and remainder correction overlap the FP chain on the critical path. */
-    float scale = cbrtf_rem[rem + 2] * U2F((uint32_t)(quotient + 127) << 23);
+    double scale = (double)cbrtf_rem[rem + 2] *
+                   (double)U2F((uint32_t)(quotient + 127) << 23);
 
-    /* Reconstruct mantissa cube-root. */
-    float ans = (1.0f + t) * FloatCubeRootTable[tidx];
+    double ans = (1.0 + td) * (double)FloatCubeRootTable[tidx] * scale;
 
-    return copysignf(ans * scale, x);
+    return copysignf((float)ans, x);
 }
