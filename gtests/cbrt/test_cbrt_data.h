@@ -36,7 +36,7 @@
 static libm_test_special_data_f32
 test_cbrtf_conformance_data[] = {
    // special accuracy tests
-   {0x38800000, 0x3f800000,  0},  //min= 0.00006103515625, small enough that cbrt(x) = 1
+   {0x38800000, 0x3f800000,  0}, //min= 0.00006103515625
    {0x387FFFFF, 0x3f800000,  0}, //min - 1 bit
    {0x38800001, 0x3f800000,  0}, //min + 1 bit
    #if defined(_WIN64) || defined(_WIN32)
@@ -309,7 +309,7 @@ test_cbrtf_conformance_data[] = {
    {0x7fa0bd90,0X7fe0bd90}, // nan
    {0x7fbfffff,0X7fffffff}, // nan
 
-   {0x7f800000,0x7f800000}, 
+   {0x7f800000,0x7f800000},
    {0xff800000,0xff800000},
 
 
@@ -472,4 +472,3 @@ test_cbrt_conformance_data[] = {
     {0x80001fffffffffff, 0xaa7fffffffffffab, 0} // (-1.73833895195870167397466018576152301829197566259896e-310 ,-0.000000)^1/3 = (-5.5809931214954306443504636562311623283571665772106e-104 ,-0.000000)
 
 };
-
