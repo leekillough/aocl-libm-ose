@@ -318,6 +318,22 @@ test_cbrtf_conformance_data[] = {
    {0x41efb2dc, 0x4046c795, 0},  // cbrtf(29.962334)
    {0x420fbd3c, 0x40533219, 0},  // cbrtf(35.934799)
    {0x461c3809, 0x41ac57e5, 0},  // cbrtf(9998.009)
+   // Cases covering all three biased-exponent residues mod 3 in [1, 10000].
+   // rem=0 (biased_exp divisible by 3): cbrtf_rem factor is 1.0 (exact).
+   {0x3f804000, 0x3f801552, 0},  // cbrtf(1.001953125)
+   {0x3fa04000, 0x3f89f4a2, 0},  // cbrtf(1.251953125)
+   {0x3fc04000, 0x3f929645, 0},  // cbrtf(1.501953125)
+   {0x3fe04000, 0x3f9a4e75, 0},  // cbrtf(1.751953125)
+   // rem=1: cbrtf_rem factor is cbrt(2), irrational; previously wrong when stored as float.
+   {0x40004000, 0x3fa15ff4, 0},  // cbrtf(2.00390625)
+   {0x40204000, 0x3fadd02b, 0},  // cbrtf(2.50390625)
+   {0x40404000, 0x3fb8b023, 0},  // cbrtf(3.00390625)
+   {0x40604000, 0x3fc269fa, 0},  // cbrtf(3.50390625)
+   // rem=2: cbrtf_rem factor is cbrt(4), irrational; previously wrong when stored as float.
+   {0x40804000, 0x3fcb51cd, 0},  // cbrtf(4.0078125)
+   {0x40a04000, 0x3fdafda9, 0},  // cbrtf(5.0078125)
+   {0x40c04000, 0x3fe8b13d, 0},  // cbrtf(6.0078125)
+   {0x40e04000, 0x3ff4f23d, 0},  // cbrtf(7.0078125)
 };
 
 

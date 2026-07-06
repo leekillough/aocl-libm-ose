@@ -30,16 +30,18 @@
  * Signature:
  *   float cbrtf(float x)
  *
- * Rewritten to work entirely in single precision.  memcpy-based bit
- * reinterpretation helpers compile to vmovd on x86 with -O2/-O3 and are
- * portable to non-x86 targets.
+ * memcpy-based bit reinterpretation helpers compile to vmovd on x86 with
+ * -O2/-O3 and are portable to non-x86 targets.
  *
  * cbrt(x) = cbrt(m * 2^n)
  *         = cbrt(m) * 2^quotient * cbrtf_rem[rem+2]
  * where m in [1,2), quotient = trunc(n/3), rem = n - 3*quotient in {-2..2}.
  *
- * cbrt(m) ~ (1 + t) * FloatCubeRootTable[k]
- * where k = top 8 mantissa bits, t = Horner 2-term poly on r = m*Recip[k]-1.
+ * cbrt(m) ~ (1 + t) * CubeRootTable[k]
+ * where k = top 8 mantissa bits (0..255), t = Horner 2-term poly on
+ * r = m * DoubleReciprocalTable[k] - 1.  All table lookups and arithmetic
+ * are done in double precision so that the only rounding step is the final
+ * (float) cast, keeping the error below 0.5 ULP.
  */
 
 #include <stdint.h>
@@ -61,13 +63,14 @@ static inline float    U2F(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 
 /*
  * cbrt(2^k) for k in {-2,-1,0,1,2}, indexed by k+2.
+ * Stored in double so that their full precision reaches the final (float) cast.
  */
-static const float cbrtf_rem[5] = {
-    6.299605249474365823E-1f,   /* cbrt(2^-2)  k=-2 */
-    7.937005259840997374E-1f,   /* cbrt(2^-1)  k=-1 */
-    1.0f,                       /* cbrt(2^0)   k= 0 */
-    1.2599210498948731648f,     /* cbrt(2^1)   k= 1 */
-    1.5874010519681994748f,     /* cbrt(2^2)   k= 2 */
+static const double cbrtf_rem[5] = {
+    0x1.428a2f98d728bp-1,   /* cbrt(2^-2)  k=-2 */
+    0x1.965fea53d6e3dp-1,   /* cbrt(2^-1)  k=-1 */
+    0x1.0000000000000p+0,   /* cbrt(2^0)   k= 0 */
+    0x1.428a2f98d728bp+0,   /* cbrt(2^1)   k= 1 */
+    0x1.965fea53d6e3dp+0,   /* cbrt(2^2)   k= 2 */
 };
 
 float
@@ -109,20 +112,20 @@ ALM_PROTO_OPT(cbrtf)(float x) {
     uint32_t tidx = ixm >> 15;
 
     /*
-     * Reciprocal-reduce and polynomial in double precision to avoid
-     * accumulation of float rounding errors across the multiply chain.
-     * The conversion float->double is exact; only the final result is
-     * rounded back to float via copysignf.
+     * All arithmetic in double so that the only rounding step is the final
+     * (float) cast.  DoubleReciprocalTable and CubeRootTable hold 53-bit
+     * accurate values; cbrtf_rem is also double.  The conversion float->double
+     * for mf is exact.
      */
-    double rd = (double)mf * (double)FloatReciprocalTable[tidx] - 1.0;
+    double rd = (double)mf * DoubleReciprocalTable[tidx] - 1.0;
 
     /* Horner 2-term: cbrt(1+r) - 1 ~= r*(1/3 + r*(-1/9)). */
     double td = rd * (1.0/3.0 + rd * (-1.0/9.0));
 
-    double scale = (double)cbrtf_rem[rem + 2] *
+    double scale = cbrtf_rem[rem + 2] *
                    (double)U2F((uint32_t)(quotient + 127) << 23);
 
-    double ans = (1.0 + td) * (double)FloatCubeRootTable[tidx] * scale;
+    double ans = (1.0 + td) * CubeRootTable[tidx] * scale;
 
     return copysignf((float)ans, x);
 }
