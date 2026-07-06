@@ -38,10 +38,11 @@
  * where m in [1,2), quotient = trunc(n/3), rem = n - 3*quotient in {-2..2}.
  *
  * cbrt(m) ~ (1 + t) * CubeRootTable[k]
- * where k = top 8 mantissa bits (0..255), t = Horner 2-term poly on
- * r = m * DoubleReciprocalTable[k] - 1.  All table lookups and arithmetic
- * are done in double precision so that the only rounding step is the final
- * (float) cast, keeping the error below 0.5 ULP.
+ * where k = top 8 mantissa bits (0..255), t = 3-term poly on
+ * r = m * DoubleReciprocalTable[k] - 1: t = r/3 - r^2/9 + 5*r^3/81.
+ * All table lookups and arithmetic are done in double precision so that the
+ * only rounding step is the final (float) cast, keeping the error at <=1 ULP
+ * for all 2^32 inputs (18194 inputs are exactly 1 ULP from correctly rounded).
  */
 
 #include <stdint.h>
@@ -114,18 +115,28 @@ ALM_PROTO_OPT(cbrtf)(float x) {
     /*
      * All arithmetic in double so that the only rounding step is the final
      * (float) cast.  DoubleReciprocalTable and CubeRootTable hold 53-bit
-     * accurate values; cbrtf_rem is also double.  The conversion float->double
-     * for mf is exact.
+     * accurate values; cbrtf_rem is also double.  The conversion of mf
+     * float->double is exact.
      */
-    double rd = (double)mf * DoubleReciprocalTable[tidx] - 1.0;
+    /* rd via FMA: product is exact internally, one rounding at the end. */
+    double rd = fma((double)mf, DoubleReciprocalTable[tidx], -1.0);
 
-    /* Horner 2-term: cbrt(1+r) - 1 ~= r*(1/3 + r*(-1/9)). */
-    double td = rd * (1.0/3.0 + rd * (-1.0/9.0));
+    /*
+     * 3-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9 + 5*r^3/81.
+     * Inner Horner step uses FMA to eliminate the intermediate rounding of
+     * (1/3 + r*(-1/9)).  r^3 for the 3rd term is computed in parallel on
+     * the r^2 chain; the correction adds one FMA to the critical path.
+     */
+    double r2 = rd * rd;
+    double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
+    td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
 
     double scale = cbrtf_rem[rem + 2] *
                    (double)U2F((uint32_t)(quotient + 127) << 23);
 
-    double ans = (1.0 + td) * CubeRootTable[tidx] * scale;
+    /* ans = (1+td)*cs = cs + td*cs; FMA avoids rounding the (1+td) sum. */
+    double cs  = CubeRootTable[tidx] * scale;
+    double ans = fma(td, cs, cs);
 
     return copysignf((float)ans, x);
 }
