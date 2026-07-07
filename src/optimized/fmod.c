@@ -35,8 +35,9 @@
  * fmod(x, y) = x - n*y, where n = trunc(x/y).
  *
  * Fast path (normal x and y with exponent difference <= 52):
- *   n = trunc(|x|/|y|) fits in a uint64_t < 2^53, so a single FMA
- *   computes |x| - n*|y| exactly (the result is always representable).
+ *   n = trunc(|x|/|y|) fits in a uint64_t < 2^53, so n is exactly
+ *   representable; the FMA then computes |x| - n*|y| with a single
+ *   rounding rather than two.
  *
  * General path (subnormals, or exponent difference > 52):
  *   Reduce in 52-bit chunks: find the largest w = |y| * 2^(52*k) such
@@ -120,6 +121,11 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
             /* x is NaN. Return NaN */
             if(ax > POS_INF_F64)
             {
+                /*
+                  The old Windows path that called __alm_handle_error for x
+                  NaN was wrong; it unconditionally raised FE_INVALID for qNaN
+                  inputs, which violates IEEE 754.
+                */
                 result = x + x;
             }
             else
@@ -154,7 +160,8 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                 else
                 {
                     /* Fast path: normal x and y with diff_exp <= 52.
-                     * n = trunc(|x|/|y|) < 2^53, so the FMA computes |x| - n*|y| exactly. */
+                     * n = trunc(|x|/|y|) < 2^53, so n is exactly representable; the FMA
+                     * then computes |x| - n*|y| with a single rounding rather than two. */
                     double r = (double)(uint64_t)(adx / ady);
                     double w = fma(-r, ady, adx);
                     if(w < 0)
