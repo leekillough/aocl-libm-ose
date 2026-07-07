@@ -38,16 +38,21 @@ long long ALM_PROTO_REF(llrint)(double x)
     __asm__("cvtsd2si %1, %0" : "=r"(r) : "x"(x));
     return r;
 #else
-    UT64 checkbits, val_2p52;
+    UT64 checkbits;
+    UT64 val_2p52;
+    long long result;
+
     checkbits.f64 = x;
 
-    if ((checkbits.u64 & 0x7FFFFFFFFFFFFFFF) > 0x4330000000000000) {
-        __alm_handle_error((unsigned long long)x, 0);
-        return (long long)x;
+    if ((checkbits.u64 & POS_BITSET_DP64) > EXP_VAL_52_DP64) {
+        __alm_handle_error(SIGNBIT_DP64, AMD_F_INVALID);
+        result = (long long)SIGNBIT_DP64;
+    } else {
+        val_2p52.u32[1] = (checkbits.u32[1] & SIGNBIT_SP32) | 0x43300000;
+        val_2p52.u32[0] = 0;
+        result = (long long)((x + val_2p52.f64) - val_2p52.f64);
     }
 
-    val_2p52.u32[1] = (checkbits.u32[1] & 0x80000000) | 0x43300000;
-    val_2p52.u32[0] = 0;
-    return (long long)((x + val_2p52.f64) - val_2p52.f64);
+    return result;
 #endif
 }
