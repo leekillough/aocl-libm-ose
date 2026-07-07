@@ -106,8 +106,17 @@ static const struct expf_data expf_v2_data = {
 #define EXPF_HUGE	   expf_v2_data.Huge
 #define EXPF_TABLE         expf_v2_data.table_v3
 
-#define EXPF_FARG_MIN -0x1.9fe368p6f    /* log(0x1p-150) ~= -103.97 */
-#define EXPF_FARG_MAX  0x1.62e42ep6f    /* log(0x1p128)  ~=   88.72  */
+#define EXPF_FARG_MIN  -0x1.9fe368p6f   /* log(2^-150) ~= -103.97 */
+#define EXPF_FARG_MAX   0x1.62e42ep6f   /* log(2^128)  ~=   88.72 */
+
+/* Bit patterns for the special-case gate and sign/infinity checks. */
+#define EXPF_ABS_MASK       0x7FFFFFFFu  /* strip sign bit */
+#define EXPF_NEG_INF_BITS   0xFF800000u  /* -infinity */
+/* Gate at 88.0f (0x42B00000): catches all overflow (>88.72) and underflow
+ * (<-103.97) inputs.  Must be <= |EXPF_FARG_MAX| so that every overflowing
+ * input enters the gate; the previous value of 96.0f (0x42C00000) was too
+ * large and allowed inputs in (-103.97, -96.0) to bypass the underflow path. */
+#define EXPF_SPECIAL_GATE   0x42B00000u  /* 88.0f */
 
 
 /******************************************
@@ -132,13 +141,13 @@ ALM_PROTO_OPT(expf)(float x)
 
     uint32_t ix = asuint32(x);
 
-    if (unlikely((ix & 0x7FFFFFFFU) >= 0x42C00000U)) {
-        if ((ix & 0x7FFFFFFFU) > PINFBITPATT_SP32)      /* NaN */
+    if (unlikely((ix & EXPF_ABS_MASK) >= EXPF_SPECIAL_GATE)) {
+        if ((ix & EXPF_ABS_MASK) > PINFBITPATT_SP32)    /* NaN */
             return __alm_handle_errorf(ix | QNAN_MASK_32,
                                        (ix & QNAN_MASK_32) ? AMD_F_NONE
                                                            : AMD_F_INVALID);
 
-        if (ix == 0xFF800000U)   /* -inf: exp(-inf) = 0 */
+        if (ix == EXPF_NEG_INF_BITS)   /* -inf: exp(-inf) = 0 */
             return 0.0f;
 
         if (x > EXPF_FARG_MAX) {
