@@ -30,16 +30,38 @@
 #include <libm/amd_funcs_internal.h>
 #include <string.h>
 
+/* Bounds for the valid llround(double) input range. */
+#define LLROUND_D_MAX        0x1.0p+63          /* 2^63: first double too large for long long */
+#define LLROUND_D_MIN       -0x1.0p+63          /* -2^63: long long minimum as double */
+/* Bit pattern of 2^52: doubles with |x| >= 2^52 are already exact integers. */
+#define LLROUND_D_INT_BITS   0x4330000000000000ULL
+/* Bit pattern returned for out-of-range input: LLONG_MIN = 0x8000000000000000. */
+#define LLROUND_OOR_BITS     0x8000000000000000ULL
+/* Sign-bit mask and exponent of ±0.5 in double (used to construct signed half). */
+#define LLROUND_SIGN_MASK    0x8000000000000000ULL
+#define LLROUND_HALF_BITS    0x3FE0000000000000ULL  /* |0.5| in double */
+/* Absolute-value mask for double. */
+#define LLROUND_ABS_MASK     0x7fffffffffffffffULL
+
 long long ALM_PROTO_REF(llround)(double x)
 {
     uint64_t ui;
     memcpy(&ui, &x, sizeof(ui));
-    ui = (ui & 0x8000000000000000ULL) | 0x3FE0000000000000ULL;
-    double half;
-    memcpy(&half, &ui, sizeof(half));
-    if (unlikely(!(x >= -0x1.0p+63 && x < 0x1.0p+63))) {
-        __alm_handle_error(0x8000000000000000ULL, AMD_F_NONE);
-        return (long long)0x8000000000000000ULL;
+    long long result;
+
+    if (unlikely(!((x >= LLROUND_D_MIN) && (x < LLROUND_D_MAX)))) {
+        __alm_handle_error(LLROUND_OOR_BITS, AMD_F_NONE);
+        result = (long long)LLROUND_OOR_BITS;
+    } else if ((ui & LLROUND_ABS_MASK) >= LLROUND_D_INT_BITS) {
+        /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
+         * halfway case that rounds to even, corrupting exact odd integers. */
+        result = (long long)x;
+    } else {
+        ui = (ui & LLROUND_SIGN_MASK) | LLROUND_HALF_BITS;
+        double half;
+        memcpy(&half, &ui, sizeof(half));
+        result = (long long)(x + half);
     }
-    return (long long)(x + half);
+
+    return result;
 }
