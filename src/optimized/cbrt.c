@@ -69,14 +69,15 @@
 #include <libm/alm_special.h>
 #include <cbrt_data.h>
 
-#define ONE_BY_512          0.001953125                         // 0x3f60000000000000
+/* ONE_BY_512 = 2^-9 exactly; all others are nearest doubles to Taylor coefficients. */
+#define ONE_BY_512          0x1.0000000000000p-9
 
-#define CBRT_EXP_COEFF_1    3.33333333333333314829616256247E-1  // 0x3fd5555555555555
-#define CBRT_EXP_COEFF_2    -1.11111111111111104943205418749E-1 // 0xbfbc71c71c71c71c
-#define CBRT_EXP_COEFF_3    6.17283950617283916351141215273E-2  // 0x3faf9add3c0ca458
-#define CBRT_EXP_COEFF_4    -4.11522633744855967363740489873E-2 // 0xbfa511e8d2b3183b
-#define CBRT_EXP_COEFF_5    3.01783264746227734842687340233E-2  // 0x3f9ee7113506ac13
-#define CBRT_EXP_COEFF_6    -2.34720317024843770636888251602E-2 // 0xbf98090d6221a247
+#define CBRT_EXP_COEFF_1    0x1.5555555555555p-2   /*  1/3     */
+#define CBRT_EXP_COEFF_2   -0x1.c71c71c71c71cp-4   /* -1/9     */
+#define CBRT_EXP_COEFF_3    0x1.f9add3c0ca458p-5   /*  5/81    */
+#define CBRT_EXP_COEFF_4   -0x1.511e8d2b3183bp-5   /* -10/243  */
+#define CBRT_EXP_COEFF_5    0x1.ee7113506ac13p-6   /*  22/729  */
+#define CBRT_EXP_COEFF_6   -0x1.8090d6221a247p-6   /* -154/6561 */
 
 /*
  * cbrt(2^k) high and low parts for k in {-2, -1, 0, 1, 2}, indexed by k+2.
@@ -158,12 +159,18 @@ ALM_PROTO_OPT(cbrt)(double x) {
      */
     flt64_t midx = {.u = mant_idx | 0x4330000000000000ULL};
     flt64_t mant = {.u = InverseTable[mant_idx - 256]};
-    double     r = mant.d * (rdu.d - (midx.d - 4503599627370496.0) * ONE_BY_512);
+    /*
+     * r = mant * (rdu - mant_idx/512).  FMA form avoids rounding the
+     * inner subtraction before the outer multiply: computes
+     * mant*rdu - mant*(mant_idx/512) with one final rounding.
+     */
+    double idx_frac = (midx.d - 4503599627370496.0) * ONE_BY_512; /* exact: 2^-9 * integer */
+    double r = fma(rdu.d, mant.d, -(idx_frac * mant.d));
 
     /*
-     * Degree-6 polynomial: c1*r + c2*r^2 + c3*r^3 + c4*r^4 + c5*r^5 + c6*r^6.
-     * Evaluated in two independent chains so both FMA execution units on Zen 5
-     * stay busy simultaneously: A accumulates odd-degree terms, B even-degree.
+     * Degree-6 polynomial: c1*r + c2*r^2 + ... + c6*r^6.
+     * Two independent chains (odd A, even B) keep both FMA units busy on Zen 5.
+     * Each accumulation step uses FMA to eliminate one intermediate rounding.
      */
     double r2 = r * r;
     double r3 = r2 * r;
@@ -173,10 +180,10 @@ ALM_PROTO_OPT(cbrt)(double x) {
 
     double polyA = CBRT_EXP_COEFF_1 * r;
     double polyB = CBRT_EXP_COEFF_2 * r2;
-    polyA += CBRT_EXP_COEFF_3 * r3;
-    polyB += CBRT_EXP_COEFF_4 * r4;
-    polyA += CBRT_EXP_COEFF_5 * r5;
-    polyB += CBRT_EXP_COEFF_6 * r6;
+    polyA = fma(CBRT_EXP_COEFF_3, r3, polyA);
+    polyB = fma(CBRT_EXP_COEFF_4, r4, polyB);
+    polyA = fma(CBRT_EXP_COEFF_5, r5, polyA);
+    polyB = fma(CBRT_EXP_COEFF_6, r6, polyB);
     double poly = polyA + polyB;
 
     /* cbrt_rem_h/t indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
@@ -188,9 +195,11 @@ ALM_PROTO_OPT(cbrt)(double x) {
     flt64_t cbrtF_h = {.u = F_H_L[fidx + 1]};
 
     double bH = cbrtF_h.d * cbrtRem_h;
-    double bT = cbrtF_t.d * cbrtRem_t + cbrtF_t.d * cbrtRem_h + cbrtRem_t * cbrtF_h.d;
+    /* bT = F_t*Rem_t + F_t*Rem_h + Rem_t*F_h; FMA eliminates two intermediate roundings. */
+    double bT = fma(cbrtF_t.d, cbrtRem_t, fma(cbrtF_t.d, cbrtRem_h, cbrtRem_t * cbrtF_h.d));
 
-    double ans = (poly * bT + bT) + (poly * bH + bH);
+    /* ans = (1+poly)*bH + (1+poly)*bT; FMA avoids rounding (1+poly). */
+    double ans = fma(poly, bH, bH) + fma(poly, bT, bT);
 
     /*
      * Scale by 2^quotient: construct the scale as a pure-exponent double via
