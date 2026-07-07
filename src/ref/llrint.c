@@ -32,15 +32,14 @@
 
 long long ALM_PROTO_REF(llrint)(double x)
 {
+    long long result;
+
 #if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
     (defined(__x86_64__) || defined(_M_X64))
-    long long r;
-    __asm__("cvtsd2si %1, %0" : "=r"(r) : "x"(x));
-    return r;
+    __asm__("cvtsd2si %1, %0" : "=r"(result) : "x"(x));
 #else
     UT64 checkbits;
     UT64 val_2p52;
-    long long result;
 
     checkbits.f64 = x;
 
@@ -52,7 +51,7 @@ long long ALM_PROTO_REF(llrint)(double x)
         val_2p52.u32[0] = 0;
         result = (long long)((x + val_2p52.f64) - val_2p52.f64);
     }
+#endif
 
     return result;
-#endif
 }

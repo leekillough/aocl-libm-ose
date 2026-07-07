@@ -32,15 +32,14 @@
 
 long long ALM_PROTO_REF(llrintf)(float x)
 {
+    long long result;
+
 #if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
     (defined(__x86_64__) || defined(_M_X64))
-    long long r;
-    __asm__("cvtss2si %1, %0" : "=r"(r) : "x"(x));
-    return r;
+    __asm__("cvtss2si %1, %0" : "=r"(result) : "x"(x));
 #else
     UT32 checkbits;
     UT32 val_2p23;
-    long long result;
 
     checkbits.f32 = x;
 
@@ -51,7 +50,7 @@ long long ALM_PROTO_REF(llrintf)(float x)
         val_2p23.u32 = (checkbits.u32 & SIGNBIT_SP32) | EXP_VAL_23_F32;
         result = (long long)((x + val_2p23.f32) - val_2p23.f32);
     }
+#endif
 
     return result;
-#endif
 }
