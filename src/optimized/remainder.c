@@ -48,7 +48,7 @@
 //     2*ax >  ay  -> n=1, result = sign(x)*(ax - ay) [exact by Sterbenz]
 //
 //   Single-step path (exponent diff <= 52):
-//     n = rne_d(ax/ay): vroundsd imm=8 (SSE4.1) or trunc(q+0.5) fallback.
+//     n = RneD(ax/ay): vroundsd imm=8 (SSE4.1) or trunc(q+0.5) fallback.
 //     r = ax - n*ay via vfnmadd231sd.
 //     Boundary correction for FP rounding overshoot, plus fallback tie correction.
 //
@@ -75,14 +75,14 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-// rne_d: round q to nearest integer, ties to even, independent of the current
+// RneD: round q to nearest integer, ties to even, independent of the current
 // FP rounding mode.  q is always nonnegative at every call site here.
 
 #ifdef __SSE4_1__
 
 // With SSE4.1: vroundsd imm=8 -- one instruction, exact nearest-even.
 #include <immintrin.h>
-static inline double rne_d(double q) {
+static inline double RneD(double q) {
     __m128d v = _mm_set_sd(q);
     return _mm_cvtsd_f64(_mm_round_sd(v, v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
 }
@@ -95,7 +95,7 @@ static inline double rne_d(double q) {
 // Even-floor half-integer ties are corrected at each call site with:
 //   if (r + r == -y && (int64_t)n & 1) r += y;
 // (no-op in the SSE4.1 path where nearest-even always gives an even n).
-static inline double rne_d(double q) { return trunc(q + 0.5); }
+static inline double RneD(double q) { return trunc(q + 0.5); }
 
 #endif // __SSE4_1__
 
@@ -105,6 +105,7 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
     uint64_t iy = asuint64(y);
     uint64_t ax = ix & UINT64_C(0x7fffffffffffffff);
     uint64_t ay = iy & UINT64_C(0x7fffffffffffffff);
+    double result;
 
     // Single branch for all special cases.  For normal finite non-zero
     // inputs ax,ay in [1, 0x7fefffffffffffff], so ax-1 and ay-1 are each at
@@ -118,85 +119,86 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
         // Per IEEE 754, any SNaN operand raises FE_INVALID.
         if ((ax - UINT64_C(0x7ff0000000000001)) < UINT64_C(0x0007ffffffffffff) ||
             (ay - UINT64_C(0x7ff0000000000001)) < UINT64_C(0x0007ffffffffffff))
-            return __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
+            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
 
         // x=Inf is invalid regardless of y (even if y is a quiet NaN):
         // check before QNaN propagation so remainder(Inf, QNaN) -> FE_INVALID.
-        if (ax == UINT64_C(0x7ff0000000000000))
-            return __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
+        else if (ax == UINT64_C(0x7ff0000000000000))
+            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
 
-        // Quiet NaN: propagate without raising an exception. */
-        if (ax > UINT64_C(0x7ff0000000000000)) return x;   // x=QNaN
-        if (ay > UINT64_C(0x7ff0000000000000)) return y;   // y=QNaN
+        // Quiet NaN: propagate without raising an exception.
+        else if (ax > UINT64_C(0x7ff0000000000000))
+            result = x;   // x=QNaN
+        else if (ay > UINT64_C(0x7ff0000000000000))
+            result = y;   // y=QNaN
 
         // y=0: invalid (x is confirmed finite non-zero here).
-        if (ay == 0)
-            return __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
+        else if (ay == 0)
+            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
 
-        return x;  // y=Inf or x=0
-    }
+        else
+            result = x;   // y=Inf or x=0
 
-    // Reconstruct |x| and |y| as doubles.  IEEE 754 nonnegative doubles are
-    // monotone in their integer representation, so ax <= ay iff |x| <= |y|.
-    double adx = asdouble(ax);
-    double ady = asdouble(ay);
+    } else {
+        // Reconstruct |x| and |y| as doubles.  IEEE 754 nonnegative doubles are
+        // monotone in their integer representation, so ax <= ay iff |x| <= |y|.
+        double adx = asdouble(ax);
+        double ady = asdouble(ay);
 
-    // Fast path: |x| <= |y|.  n is 0 or 1; no division needed.
-    // 2*adx is exact (no overflow: ax < 0x7ff0000000000000).
-    // adx - ady is exact by Sterbenz (ady/2 < adx <= ady for n=1 case).
-    if (likely(ax <= ay)) {
-        double ax2 = adx + adx;
-        if (ax2 <= ady)
-            return x;  // n=0 (includes tie 2|x|==|y|: rounds to 0)
-        double r = adx - ady;  // exact by Sterbenz, n=1
-        if (r == 0.0)
-            return copysign(0.0, x);
-        return ix & UINT64_C(0x8000000000000000) ? -r : r;
-    }
+        // Fast path: |x| <= |y|.  n is 0 or 1; no division needed.
+        // 2*adx is exact (no overflow: ax < 0x7ff0000000000000).
+        // adx - ady is exact by Sterbenz (ady/2 < adx <= ady for n=1 case).
+        if (likely(ax <= ay)) {
+            double ax2 = adx + adx;
+            if (ax2 <= ady) {
+                result = x;  // n=0 (includes tie 2|x|==|y|: rounds to 0)
+            } else {
+                double r = adx - ady;  // exact by Sterbenz, n=1
+                result = (r == 0.0) ? copysign(0.0, x)
+                       : (ix & UINT64_C(0x8000000000000000)) ? -r : r;
+            }
+        } else {
+            int32_t xe_d = (int32_t)(ax >> 52);
+            int32_t ye_d = (int32_t)(ay >> 52);
+            int32_t d    = xe_d - ye_d;
 
-    int32_t xe_d = (int32_t)(ax >> 52);
-    int32_t ye_d = (int32_t)(ay >> 52);
-    int32_t d    = xe_d - ye_d;
+            if (likely(d <= 52)) {
+                double n_d = RneD(adx / ady);
+                double r   = fma(-n_d, ady, adx);
 
-    if (likely(d <= 52)) {
-        double n_d = rne_d(adx / ady);
-        double r   = fma(-n_d, ady, adx);
+                if (unlikely(r >= ady))
+                    r -= ady;
+                else if (unlikely(r < -ady || (r + r == -ady && (int64_t)n_d & 1)))
+                    r += ady;
 
-        if (unlikely(r >= ady))
-            r -= ady;
-        else if (unlikely(r < -ady || (r + r == -ady && (int64_t)n_d & 1)))
-            r += ady;
+                result = (r == 0.0) ? copysign(0.0, x)
+                       : (ix & UINT64_C(0x8000000000000000)) ? -r : r;
+            } else {
+                // d > 52: multi-step 24-bit chunk reduction.
+                // Each step reduces adx mod (w) where w = ady * 2^(24*nsteps).
+                // We use (uint64_t)(adx/w) to get the exact integer quotient (fits in
+                // 24 bits by construction).  scalbn is used instead of bit-manipulation
+                // so that subnormal ady is handled correctly.
+                int32_t nsteps = d / 24;
+                double w = ye_d > 0 ? asdouble(ay + ((uint64_t)(24 * nsteps) << 52))
+                    : scalbn(ady, 24 * nsteps);
+                for (int32_t i = 0; i < nsteps; i++) {
+                    uint64_t q = (uint64_t)(adx / w);
+                    adx -= (double)q * w;
+                    w *= 0x1p-24;  // 2^-24
+                }
+                double n = RneD(adx / w);
+                adx = fma(-n, w, adx);
+                if (unlikely(adx >= ady))
+                    adx -= ady;
+                else if (unlikely(adx < -ady || (adx + adx == -ady && (int64_t)n & 1)))
+                    adx += ady;
 
-        if (r == 0.0)
-            return copysign(0.0, x);
-
-        return ix & UINT64_C(0x8000000000000000) ? -r : r;
-    }
-
-    // d > 52: multi-step 24-bit chunk reduction.
-    // Each step reduces adx mod (w) where w = ady * 2^(24*nsteps).
-    // We use (uint64_t)(adx/w) to get the exact integer quotient (fits in
-    // 24 bits by construction).  scalbn is used instead of bit-manipulation
-    // so that subnormal ady is handled correctly.
-    {
-        int32_t nsteps = d / 24;
-        double w = ye_d > 0 ? asdouble(ay + ((uint64_t)(24 * nsteps) << 52))
-            : scalbn(ady, 24 * nsteps);
-        for (int32_t i = 0; i < nsteps; i++) {
-            uint64_t q = (uint64_t)(adx / w);
-            adx -= (double)q * w;
-            w *= 0x1p-24;  // 2^-24
+                result = (adx == 0.0) ? copysign(0.0, x)
+                       : (ix & UINT64_C(0x8000000000000000)) ? -adx : adx;
+            }
         }
-        double n = rne_d(adx / w);
-        adx = fma(-n, w, adx);
-        if (unlikely(adx >= ady))
-            adx -= ady;
-        else if (unlikely(adx < -ady || (adx + adx == -ady && (int64_t)n & 1)))
-            adx += ady;
-
-        if (adx == 0.0)
-            return copysign(0.0, x);
-
-        return ix & UINT64_C(0x8000000000000000) ? -adx : adx;
     }
+
+    return result;
 }
