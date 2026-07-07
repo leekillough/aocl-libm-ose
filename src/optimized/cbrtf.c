@@ -59,8 +59,8 @@
 #include <libm/alm_special.h>
 #include <cbrtf_data.h>
 
-static inline uint32_t F2U(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
-static inline float    U2F(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
+static inline uint32_t FloatToUint(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+static inline float    UintToFloat(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 
 /*
  * cbrt(2^k) for k in {-2,-1,0,1,2}, indexed by k+2.
@@ -76,68 +76,82 @@ static const double cbrtf_rem[5] = {
 
 float
 ALM_PROTO_OPT(cbrtf)(float x) {
-    uint32_t ix  = F2U(x);
+    uint32_t ix  = FloatToUint(x);
     uint32_t ixe = EXPBITS_SP32 & ix;
     uint32_t ixm = MANTBITS_SP32 & ix;
+    float result = 0.0f;
 
     if (unlikely(ixe == PINFBITPATT_SP32)) {
-        if (ixm == 0)
-            return x;  /* +-Inf: return as-is, no exception */
-        if (ixm & QNAN_MASK_32)
-            return x;  /* qNaN: propagate silently */
-        /* sNaN: quiet the NaN and raise FE_INVALID */
-        return __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
+        if (ixm == 0) {
+            result = x;  /* +-Inf: return as-is, no exception */
+        } else if (ixm & QNAN_MASK_32) {
+            result = x;  /* qNaN: propagate silently */
+        } else {
+            /* sNaN: quiet the NaN and raise FE_INVALID */
+            result = __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
+        }
+    } else {
+        ixe >>= EXPSHIFTBITS_SP32;
+
+        int32_t biased_exp;
+
+        if (unlikely(ixe == 0) && ixm == 0) {
+            result = x;  /* +-0: return as-is */
+        } else {
+            if (unlikely(ixe == 0)) {
+                /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
+                uint32_t tmp_u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32;
+                tmp_u = FloatToUint(UintToFloat(tmp_u) - 1.0f);
+                ixe = ((tmp_u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32) + (uint32_t)EMIN_SP32;
+                ixm = tmp_u & MANTBITS_SP32;
+            }
+
+            /*
+             * ixe <= 254 on the normal path; on the subnormal path, the uint32_t
+             * addition of EMIN_SP32 produces a value within the range of both
+             * uint32_t and int32_t, so the conversion below is well-defined.
+             */
+            biased_exp = (int32_t)ixe - 127;
+
+            /* Signed divide-by-3 via multiply-shift; single imulq + sar + sub. */
+            int32_t quotient = (int32_t)(((int64_t)biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 31);
+            int32_t rem      = biased_exp - quotient * 3;
+
+            /* Mantissa in [1, 2): set exponent field to 127. */
+            float mf = UintToFloat(ixm | ONEEXPBITS_SP32);
+
+            /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
+            uint32_t tidx = ixm >> 15;
+
+            /*
+             * All arithmetic in double so that the only rounding step is the final
+             * (float) cast.  DoubleReciprocalTable and CubeRootTable hold 53-bit
+             * accurate values; cbrtf_rem is also double.  The conversion of mf
+             * float->double is exact.
+             */
+            /* rd via FMA: product is exact internally, one rounding at the end. */
+            double rd = fma((double)mf, DoubleReciprocalTable[tidx], -1.0);
+
+            /*
+             * 3-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9 + 5*r^3/81.
+             * Inner Horner step uses FMA to eliminate the intermediate rounding of
+             * (1/3 + r*(-1/9)).  r^3 for the 3rd term is computed in parallel on
+             * the r^2 chain; the correction adds one FMA to the critical path.
+             */
+            double r2 = rd * rd;
+            double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
+            td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
+
+            double scale = cbrtf_rem[rem + 2] *
+                           (double)UintToFloat((uint32_t)(quotient + 127) << 23);
+
+            /* ans = (1+td)*cs = cs + td*cs; FMA avoids rounding the (1+td) sum. */
+            double cs  = CubeRootTable[tidx] * scale;
+            double ans = fma(td, cs, cs);
+
+            result = copysignf((float)ans, x);
+        }
     }
 
-    ixe >>= EXPSHIFTBITS_SP32;
-
-    if (unlikely(ixe == 0)) {
-        if (ixm == 0)
-            return x;
-        /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
-        uint32_t tmp_u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32;
-        tmp_u = F2U(U2F(tmp_u) - 1.0f);
-        ixe = ((tmp_u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32) + (uint32_t)EMIN_SP32;
-        ixm = tmp_u & MANTBITS_SP32;
-    }
-
-    int32_t biased_exp = (int32_t)ixe - 127;
-
-    /* Signed divide-by-3 via multiply-shift; single imulq + sar + sub. */
-    int32_t quotient = (int32_t)(((int64_t)biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 31);
-    int32_t rem      = biased_exp - quotient * 3;
-
-    /* Mantissa in [1, 2): set exponent field to 127. */
-    float mf = U2F(ixm | ONEEXPBITS_SP32);
-
-    /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
-    uint32_t tidx = ixm >> 15;
-
-    /*
-     * All arithmetic in double so that the only rounding step is the final
-     * (float) cast.  DoubleReciprocalTable and CubeRootTable hold 53-bit
-     * accurate values; cbrtf_rem is also double.  The conversion of mf
-     * float->double is exact.
-     */
-    /* rd via FMA: product is exact internally, one rounding at the end. */
-    double rd = fma((double)mf, DoubleReciprocalTable[tidx], -1.0);
-
-    /*
-     * 3-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9 + 5*r^3/81.
-     * Inner Horner step uses FMA to eliminate the intermediate rounding of
-     * (1/3 + r*(-1/9)).  r^3 for the 3rd term is computed in parallel on
-     * the r^2 chain; the correction adds one FMA to the critical path.
-     */
-    double r2 = rd * rd;
-    double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
-    td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
-
-    double scale = cbrtf_rem[rem + 2] *
-                   (double)U2F((uint32_t)(quotient + 127) << 23);
-
-    /* ans = (1+td)*cs = cs + td*cs; FMA avoids rounding the (1+td) sum. */
-    double cs  = CubeRootTable[tidx] * scale;
-    double ans = fma(td, cs, cs);
-
-    return copysignf((float)ans, x);
+    return result;
 }

@@ -72,8 +72,8 @@ test_cbrtf_conformance_data[] = {
    {NEG_ZERO_F32, NEG_ZERO_F32, 0 },  // cbrtf(-0) = -0
    {POS_INF_F32,  POS_INF_F32,  0 },
    {NEG_INF_F32,  NEG_INF_F32,  0 },
-   {POS_SNAN_F32, POS_SNAN_F32, FE_INVALID },
-   {NEG_SNAN_F32, NEG_SNAN_F32, FE_INVALID },
+   {POS_SNAN_F32, POS_QNAN_F32, FE_INVALID },
+   {NEG_SNAN_F32, NEG_QNAN_F32, FE_INVALID },
    {POS_QNAN_F32, POS_QNAN_F32, 0 },
    {NEG_QNAN_F32, NEG_QNAN_F32, 0 },
 

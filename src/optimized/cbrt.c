@@ -37,8 +37,10 @@
  * step 2) If it is subnormal input
  *         Exponent would be 0 and mantissa is non zero
  *         Normalise subnormal number:
- *         Shifting mantissa bits to left until MSB is 1 and
- *         Number of times bits are shifted will contribute to exponent
+ *         Reinterpret the absolute value as 1.mantissa in [1,2) then
+ *         subtract 1.0 to isolate the mantissa; the resulting exponent
+ *         field gives the shift count, from which the true exponent is
+ *         derived.
  * step 3) Reduce the input [1, 2)
             3.1) Replace exponent with 3ff i.e 1
             3.2) Or with the mantissa
@@ -107,108 +109,119 @@ ALM_PROTO_OPT(cbrt)(double x) {
     uint64_t ix  = xdu.u;
     uint64_t ixe = EXPBITS_DP64 & ix;
     uint64_t ixm = MANTBITS_DP64 & ix;
+    double result = 0.0;
 
     if (unlikely(ixe == PINFBITPATT_DP64)) {
-        if (ixm == 0)
-            return x;  /* +-Inf: return as-is, no exception */
-        if (ixm & QNAN_MASK_64)
-            return x;  /* qNaN: propagate silently */
-        /* sNaN: quiet the NaN and raise FE_INVALID */
-        return __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
+        if (ixm == 0) {
+            result = x;  /* +-Inf: return as-is, no exception */
+        } else if (ixm & QNAN_MASK_64) {
+            result = x;  /* qNaN: propagate silently */
+        } else {
+            /* sNaN: quiet the NaN and raise FE_INVALID */
+            result = __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
+        }
+    } else {
+        ixe >>= EXPSHIFTBITS_DP64;
+        if (unlikely(ixe == 0) && ixm == 0) {
+            result = x;  /* +-0: return as-is */
+        } else {
+            if (unlikely(ixe == 0)) {
+                /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
+                flt64_t tmp = {.u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64};
+                --tmp.d;
+                ixe = ((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) + (uint64_t)EMIN_DP64;
+                ixm = tmp.u & MANTBITS_DP64;
+            }
+
+            /*
+             * ixe <= 2046 on the normal path; on the subnormal path, the uint64_t
+             * addition of EMIN_DP64 produces a value within the range of both
+             * uint64_t and int64_t, so the conversion below is well-defined.
+             */
+            int64_t biased_exp = (int64_t)ixe - 1023;
+
+            /*
+             * Signed divide-by-3 via multiply-shift.
+             * M = 0x55555556 =~ 2^32/3 (rounded up); high 32 bits of the signed
+             * 64-bit product give floor(biased_exp/3).  Subtracting (biased_exp >> 63)
+             * -- which is 0 for non-negative and -1 for negative -- converts floor to
+             * C truncation-toward-zero.  rem is then derived with a single multiply-
+             * subtract, so the whole divide costs one imulq + sar + lea/sub.
+             */
+            int64_t quotient = ((biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 63);
+            int64_t rem      = biased_exp - quotient * 3;
+
+            /* Reduced mantissa in [0.5, 1): built from ixm, which is correct after
+             * the subnormal path updates it above. */
+            flt64_t rdu = {.u = ixm | HALFEXPBITS_DP64};
+
+            /*
+             * 9-bit table index: upper 9 mantissa bits, rounded to nearest.
+             * Bit 43 is the rounding bit; bits 44..52 are the index.
+             */
+            uint64_t mant_idx = ((ixm >> 43) & 1) + ((ixm >> 44) | 0x100);
+
+            /*
+             * Convert mant_idx to double without vcvtsi2sd.
+             * mant_idx is in [256, 512].  OR it into the mantissa of 2^52 then
+             * subtract the magic constant -- IEEE 754 exact integer representability
+             * guarantees the result equals mant_idx exactly.
+             */
+            flt64_t midx = {.u = mant_idx | 0x4330000000000000ULL};
+            flt64_t mant = {.u = InverseTable[mant_idx - 256]};
+            /*
+             * r = mant * (rdu - mant_idx/512).  FMA form avoids rounding the
+             * inner subtraction before the outer multiply: computes
+             * mant*rdu - mant*(mant_idx/512) with one final rounding.
+             */
+            double idx_frac = (midx.d - 4503599627370496.0) * ONE_BY_512; /* exact: 2^-9 * integer */
+            double r = fma(rdu.d, mant.d, -(idx_frac * mant.d));
+
+            /*
+             * Degree-6 polynomial: c1*r + c2*r^2 + ... + c6*r^6.
+             * Two independent chains (odd A, even B) keep both FMA units busy on Zen 5.
+             * Each accumulation step uses FMA to eliminate one intermediate rounding.
+             */
+            double r2 = r * r;
+            double r3 = r2 * r;
+            double r4 = r2 * r2;
+            double r5 = r4 * r;
+            double r6 = r3 * r3;
+
+            double polyA = CBRT_EXP_COEFF_1 * r;
+            double polyB = CBRT_EXP_COEFF_2 * r2;
+            polyA = fma(CBRT_EXP_COEFF_3, r3, polyA);
+            polyB = fma(CBRT_EXP_COEFF_4, r4, polyB);
+            polyA = fma(CBRT_EXP_COEFF_5, r5, polyA);
+            polyB = fma(CBRT_EXP_COEFF_6, r6, polyB);
+            double poly = polyA + polyB;
+
+            /* CbrtRemH/T indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
+            double cbrtRem_h = CbrtRemH[rem + 2];
+            double cbrtRem_t = CbrtRemT[rem + 2];
+
+            uint64_t fidx = (mant_idx - 256) << 1;
+            flt64_t cbrtF_t = {.u = F_H_L[fidx]};
+            flt64_t cbrtF_h = {.u = F_H_L[fidx + 1]};
+
+            double bH = cbrtF_h.d * cbrtRem_h;
+            /* bT = F_t*Rem_t + F_t*Rem_h + Rem_t*F_h; FMA eliminates two intermediate roundings. */
+            double bT = fma(cbrtF_t.d, cbrtRem_t, fma(cbrtF_t.d, cbrtRem_h, cbrtRem_t * cbrtF_h.d));
+
+            /* ans = (1+poly)*bH + (1+poly)*bT; FMA avoids rounding (1+poly). */
+            double ans = fma(poly, bH, bH) + fma(poly, bT, bT);
+
+            /*
+             * Scale by 2^quotient: construct the scale as a pure-exponent double via
+             * integer shift and union-load (no vcvtsi2sd, no domain crossing).
+             * The integer work overlaps with the polynomial FP chain, so scale.d is
+             * ready before the multiply reaches the execution unit.
+             * copysign(ans, x) is a single vandpd/vorpd pair, cheaper than a branch.
+             */
+            flt64_t scale = {.u = (uint64_t)(quotient + 1023) << 52};
+            result = copysign(ans * scale.d, x);
+        }
     }
 
-    ixe >>= EXPSHIFTBITS_DP64;
-
-    if (unlikely(ixe == 0)) {
-        if (ixm == 0)
-            return x;
-        /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
-        flt64_t tmp = {.u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64};
-        --tmp.d;
-        ixe = ((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) + (uint64_t)EMIN_DP64;
-        ixm = tmp.u & MANTBITS_DP64;
-    }
-
-    int64_t biased_exp = (int64_t)ixe - 1023;
-
-    /*
-     * Signed divide-by-3 via multiply-shift.
-     * M = 0x55555556 ≈ 2^32/3 (rounded up); high 32 bits of the signed
-     * 64-bit product give floor(biased_exp/3).  Subtracting (biased_exp >> 63)
-     * — which is 0 for non-negative and −1 for negative — converts floor to
-     * C truncation-toward-zero.  rem is then derived with a single multiply-
-     * subtract, so the whole divide costs one imulq + sar + lea/sub.
-     */
-    int64_t quotient = ((biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 63);
-    int64_t rem      = biased_exp - quotient * 3;
-
-    /* Reduced mantissa in [0.5, 1): built from ixm, which is correct after
-     * the subnormal path updates it above. */
-    flt64_t rdu = {.u = ixm | HALFEXPBITS_DP64};
-
-    /*
-     * 9-bit table index: upper 9 mantissa bits, rounded to nearest.
-     * Bit 43 is the rounding bit; bits 44..52 are the index.
-     */
-    uint64_t mant_idx = ((ixm >> 43) & 1) + ((ixm >> 44) | 0x100);
-
-    /*
-     * Convert mant_idx to double without vcvtsi2sd.
-     * mant_idx is in [256, 512].  OR it into the mantissa of 2^52 then
-     * subtract the magic constant — IEEE 754 exact integer representability
-     * guarantees the result equals mant_idx exactly.
-     */
-    flt64_t midx = {.u = mant_idx | 0x4330000000000000ULL};
-    flt64_t mant = {.u = InverseTable[mant_idx - 256]};
-    /*
-     * r = mant * (rdu - mant_idx/512).  FMA form avoids rounding the
-     * inner subtraction before the outer multiply: computes
-     * mant*rdu - mant*(mant_idx/512) with one final rounding.
-     */
-    double idx_frac = (midx.d - 4503599627370496.0) * ONE_BY_512; /* exact: 2^-9 * integer */
-    double r = fma(rdu.d, mant.d, -(idx_frac * mant.d));
-
-    /*
-     * Degree-6 polynomial: c1*r + c2*r^2 + ... + c6*r^6.
-     * Two independent chains (odd A, even B) keep both FMA units busy on Zen 5.
-     * Each accumulation step uses FMA to eliminate one intermediate rounding.
-     */
-    double r2 = r * r;
-    double r3 = r2 * r;
-    double r4 = r2 * r2;
-    double r5 = r4 * r;
-    double r6 = r3 * r3;
-
-    double polyA = CBRT_EXP_COEFF_1 * r;
-    double polyB = CBRT_EXP_COEFF_2 * r2;
-    polyA = fma(CBRT_EXP_COEFF_3, r3, polyA);
-    polyB = fma(CBRT_EXP_COEFF_4, r4, polyB);
-    polyA = fma(CBRT_EXP_COEFF_5, r5, polyA);
-    polyB = fma(CBRT_EXP_COEFF_6, r6, polyB);
-    double poly = polyA + polyB;
-
-    /* CbrtRemH/T indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
-    double cbrtRem_h = CbrtRemH[rem + 2];
-    double cbrtRem_t = CbrtRemT[rem + 2];
-
-    uint64_t fidx = (mant_idx - 256) << 1;
-    flt64_t cbrtF_t = {.u = F_H_L[fidx]};
-    flt64_t cbrtF_h = {.u = F_H_L[fidx + 1]};
-
-    double bH = cbrtF_h.d * cbrtRem_h;
-    /* bT = F_t*Rem_t + F_t*Rem_h + Rem_t*F_h; FMA eliminates two intermediate roundings. */
-    double bT = fma(cbrtF_t.d, cbrtRem_t, fma(cbrtF_t.d, cbrtRem_h, cbrtRem_t * cbrtF_h.d));
-
-    /* ans = (1+poly)*bH + (1+poly)*bT; FMA avoids rounding (1+poly). */
-    double ans = fma(poly, bH, bH) + fma(poly, bT, bT);
-
-    /*
-     * Scale by 2^quotient: construct the scale as a pure-exponent double via
-     * integer shift and union-load (no vcvtsi2sd, no domain crossing).
-     * The integer work overlaps with the polynomial FP chain, so scale.d is
-     * ready before the multiply reaches the execution unit.
-     * copysign(ans, x) is a single vandpd/vorpd pair, cheaper than a branch.
-     */
-    flt64_t scale = {.u = (uint64_t)(quotient + 1023) << 52};
-    return copysign(ans * scale.d, x);
+    return result;
 }
