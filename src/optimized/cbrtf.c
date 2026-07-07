@@ -59,8 +59,19 @@
 #include <libm/alm_special.h>
 #include <cbrtf_data.h>
 
-static inline uint32_t FloatToUint(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
-static inline float    UintToFloat(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
+static inline uint32_t FloatToUint(float f)
+{
+    uint32_t u;
+    memcpy(&u, &f, sizeof(u));
+    return u;
+}
+
+static inline float UintToFloat(uint32_t u)
+{
+    float f;
+    memcpy(&f, &u, sizeof(f));
+    return f;
+}
 
 /*
  * cbrt(2^k) for k in {-2,-1,0,1,2}, indexed by k+2.
@@ -93,7 +104,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
     } else {
         ixe >>= EXPSHIFTBITS_SP32;
 
-        int32_t biased_exp;
+        int32_t biased_exp = 0;
 
         if (unlikely(ixe == 0) && ixm == 0) {
             result = x;  /* +-0: return as-is */
@@ -102,16 +113,14 @@ ALM_PROTO_OPT(cbrtf)(float x) {
                 /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
                 uint32_t tmp_u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32;
                 tmp_u = FloatToUint(UintToFloat(tmp_u) - 1.0f);
-                ixe = ((tmp_u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32) + (uint32_t)EMIN_SP32;
+                /* Extracted biased exponent is in [104, 126], well within int32_t range. */
+                biased_exp = (int32_t)((tmp_u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32)
+                             + (EMIN_SP32 - 127);
                 ixm = tmp_u & MANTBITS_SP32;
+            } else {
+                /* ixe in [1, 254], well within int32_t range. */
+                biased_exp = (int32_t)ixe - 127;
             }
-
-            /*
-             * ixe <= 254 on the normal path; on the subnormal path, the uint32_t
-             * addition of EMIN_SP32 produces a value within the range of both
-             * uint32_t and int32_t, so the conversion below is well-defined.
-             */
-            biased_exp = (int32_t)ixe - 127;
 
             /* Signed divide-by-3 via multiply-shift; single imulq + sar + sub. */
             int32_t quotient = (int32_t)(((int64_t)biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 31);

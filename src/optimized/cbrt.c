@@ -125,20 +125,19 @@ ALM_PROTO_OPT(cbrt)(double x) {
         if (unlikely(ixe == 0) && ixm == 0) {
             result = x;  /* +-0: return as-is */
         } else {
+            int64_t biased_exp = 0;
             if (unlikely(ixe == 0)) {
                 /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
                 flt64_t tmp = {.u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64};
                 --tmp.d;
-                ixe = ((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) + (uint64_t)EMIN_DP64;
+                /* Extracted biased exponent is in [971, 1022], well within int64_t range. */
+                biased_exp = (int64_t)((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64)
+                             + (EMIN_DP64 - 1023);
                 ixm = tmp.u & MANTBITS_DP64;
+            } else {
+                /* ixe in [1, 2046], well within int64_t range. */
+                biased_exp = (int64_t)ixe - 1023;
             }
-
-            /*
-             * ixe <= 2046 on the normal path; on the subnormal path, the uint64_t
-             * addition of EMIN_DP64 produces a value within the range of both
-             * uint64_t and int64_t, so the conversion below is well-defined.
-             */
-            int64_t biased_exp = (int64_t)ixe - 1023;
 
             /*
              * Signed divide-by-3 via multiply-shift.
