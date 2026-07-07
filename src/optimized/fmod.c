@@ -66,10 +66,12 @@ static double fmod_general(double adx, double ady, double x)
 {
     double w = ady;
     double t = adx * 0x1p-52;
-    while (w <= t) {
+    while (w <= t)
+    {
         w *= 0x1p52;
     }
-    for (;;) {
+    for (;;)
+    {
         double tw = w <= ady ? ady : w;
         uint64_t aw = asuint64(tw);
         double r = (double)(uint64_t)(adx / tw);
@@ -83,7 +85,8 @@ static double fmod_general(double adx, double ady, double x)
         double v = adx - c;
         double res = (((adx - v) - c) - cc) + v;
         adx = res < 0 ? res + tw : res;
-        if(w <= ady) {
+        if(w <= ady)
+        {
             break;
         }
         w *= 0x1p-52;
@@ -94,49 +97,75 @@ static double fmod_general(double adx, double ady, double x)
 double ALM_PROTO_OPT(fmod)(double x, double y)
 {
     uint64_t ay = asuint64(y) & ~SIGNBIT_DP64;
+    double result = 0.0;
 
     /* Check if y is NaN. If yes return NaN */
     if(unlikely(ay > POS_INF_F64))
-        return x * y;
-
-    /* Check if y is Zero. If yes, return NaN and raise exception */
-    if(unlikely(ay == 0))
-        return __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
-
-    uint64_t ax = asuint64(x) & ~SIGNBIT_DP64;
-
-    /* Check if x is NaN or INF */
-    if(unlikely((ax & EXPBITS_DP64) >= EXPBITS_DP64))
     {
-        /* x is NaN. Return NaN */
-        if(ax > POS_INF_F64)
-            return x + x;
-
-        /* x is INF. Return NaN and raise exception */
-        return __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
+        result = x * y;
     }
 
-    if(ax == ay)
-        return copysign(0.0, x);
+    /* Check if y is Zero. If yes, return NaN and raise exception */
+    else if(unlikely(ay == 0))
+    {
+        result = __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
+    }
+    else
+    {
+        uint64_t ax = asuint64(x) & ~SIGNBIT_DP64;
 
-    double adx = asdouble(ax);
-    double ady = asdouble(ay);
+        /* Check if x is NaN or INF */
+        if(unlikely((ax & EXPBITS_DP64) >= EXPBITS_DP64))
+        {
+            /* x is NaN. Return NaN */
+            if(ax > POS_INF_F64)
+            {
+                result = x + x;
+            }
+            else
+            {
+                /* x is INF. Return NaN and raise exception */
+                result = __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
+            }
+        }
+        else if(ax == ay)
+        {
+            result = copysign(0.0, x);
+        }
+        else
+        {
+            double adx = asdouble(ax);
+            double ady = asdouble(ay);
 
-    if(adx < ady)
-        return x;
+            if(adx < ady)
+            {
+                result = x;
+            }
+            else
+            {
+                /* Biased exponents (0 for subnormals) */
+                uint64_t xe = (EXPBITS_DP64 & ax) >> 52;
+                uint64_t ye = (EXPBITS_DP64 & ay) >> 52;
 
-    /* Biased exponents (0 for subnormals) */
-    uint64_t xe = (EXPBITS_DP64 & ax) >> 52;
-    uint64_t ye = (EXPBITS_DP64 & ay) >> 52;
+                if(unlikely(xe == 0 || ye == 0 || (int64_t)(xe - ye) > 52))
+                {
+                    result = fmod_general(adx, ady, x);
+                }
+                else
+                {
+                    /* Fast path: normal x and y with diff_exp <= 52.
+                     * n = trunc(|x|/|y|) < 2^53, so the FMA computes |x| - n*|y| exactly. */
+                    double r = (double)(uint64_t)(adx / ady);
+                    double w = fma(-r, ady, adx);
+                    if(w < 0)
+                    {
+                        w += ady;
+                    }
+                    result = copysign(w, x);
+                }
+            }
+        }
+    }
 
-    if(unlikely(xe == 0 || ye == 0 || (int64_t)(xe - ye) > 52))
-        return fmod_general(adx, ady, x);
-
-    /* Fast path: normal x and y with diff_exp <= 52.
-     * n = trunc(|x|/|y|) < 2^53, so the FMA computes |x| - n*|y| exactly. */
-    double r = (double)(uint64_t)(adx / ady);
-    double w = fma(-r, ady, adx);
-    if(w < 0)
-        w += ady;
-    return copysign(w, x);
+    return result;
 }

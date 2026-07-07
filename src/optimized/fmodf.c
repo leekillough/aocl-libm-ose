@@ -48,60 +48,80 @@
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
     uint32_t fay = asuint32(y) & ~SIGNBIT_SP32;
+    float result = 0.0f;
 
     /*Check if y in NaN. If yes, return NaN */
     if(unlikely(fay > POS_INF_F32))
-        return x * y;
+    {
+        result = x * y;
+    }
 
     /* Check if y is Zero. If yes, return NaN and raise exception*/
-    if(unlikely(fay == 0))
-        return __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
-
-    uint32_t fax = asuint32(x) & ~SIGNBIT_SP32;
-
-    /* Check if x is NaN or INF */
-    if(unlikely((fax & EXPBITS_SP32) >= EXPBITS_SP32))
+    else if(unlikely(fay == 0))
     {
-       /* x is NaN. Return NaN */
-       if(fax > POS_INF_F32)
-           return x + x;
+        result = __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
+    }
+    else
+    {
+        uint32_t fax = asuint32(x) & ~SIGNBIT_SP32;
 
-       /* x is INF. Return NaN and raise exception */
-       return __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
+        /* Check if x is NaN or INF */
+        if(unlikely((fax & EXPBITS_SP32) >= EXPBITS_SP32))
+        {
+            /* x is NaN. Return NaN */
+            if(fax > POS_INF_F32)
+            {
+                result = x + x;
+            }
+            else
+            {
+                /* x is INF. Return NaN and raise exception */
+                result = __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
+            }
+        }
+        else if(fax == fay)
+        {
+            result = copysignf(0.0f, x);
+        }
+        else
+        {
+            uint64_t ax = asuint64((double) x) & POS_BITSET_DP64;
+            uint64_t ay = asuint64((double) y) & POS_BITSET_DP64;
+
+            double adx = asdouble(ax);
+            double ady = asdouble(ay);
+
+            if(adx < ady)
+            {
+                result = x;
+            }
+            else
+            {
+                uint64_t xe = (EXPBITS_DP64 & ax) >> FMODF_MANTISSA_BITS;
+                uint64_t ye = (EXPBITS_DP64 & ay) >> FMODF_MANTISSA_BITS;
+
+                int64_t scale = (int64_t)(FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
+                int64_t quo = 0;
+
+                if(ye < xe)
+                {
+                    quo = (int64_t)(xe - ye) / FMODF_CHUNK_BITS;
+                    scale = (FMODF_CHUNK_BITS * quo + FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
+                }
+
+                double w = asdouble((uint64_t)scale) * ady;
+                while (quo > 0)
+                {
+                    quo--;
+                    adx -= (double)(uint64_t)(adx / w) * w;
+                    w *= FMODF_CHUNK_DOWN;
+                }
+
+                adx -= (double)(uint64_t)(adx / w) * w;
+                result = copysignf((float)adx, x);
+            }
+        }
     }
 
-    if(fax == fay)
-        return copysignf(0.0f, x);
-
-    uint64_t ax = asuint64((double) x) & POS_BITSET_DP64;
-    uint64_t ay = asuint64((double) y) & POS_BITSET_DP64;
-
-    double adx = asdouble(ax);
-    double ady = asdouble(ay);
-
-    if(adx < ady)
-        return x;
-
-    uint64_t xe = (EXPBITS_DP64 & ax) >> FMODF_MANTISSA_BITS;
-    uint64_t ye = (EXPBITS_DP64 & ay) >> FMODF_MANTISSA_BITS;
-
-    int64_t scale = (int64_t)(FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
-    int64_t quo = 0;
-
-    if(ye < xe)
-    {
-        quo = (int64_t)(xe - ye) / FMODF_CHUNK_BITS;
-        scale = (FMODF_CHUNK_BITS * quo + FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
-    }
-
-    double w = asdouble((uint64_t)scale) * ady;
-    while (quo > 0)
-    {
-        quo--;
-        adx -= (double)(uint64_t)(adx / w) * w;
-        w *= FMODF_CHUNK_DOWN;
-    }
-
-    adx -= (double)(uint64_t)(adx / w) * w;
-    return copysignf((float)adx, x);
+    return result;
 }
