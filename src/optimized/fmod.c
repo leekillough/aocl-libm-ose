@@ -66,9 +66,10 @@ static double fmod_general(double adx, double ady, double x)
 {
     double w = ady;
     double t = adx * 0x1p-52;
-    while(w <= t)
+    while (w <= t) {
         w *= 0x1p52;
-    while(1) {
+    }
+    for (;;) {
         double tw = w <= ady ? ady : w;
         uint64_t aw = asuint64(tw);
         double r = (double)(uint64_t)(adx / tw);
@@ -82,10 +83,12 @@ static double fmod_general(double adx, double ady, double x)
         double v = adx - c;
         double res = (((adx - v) - c) - cc) + v;
         adx = res < 0 ? res + tw : res;
-        if(w <= ady)
-            return copysign(adx, x);
+        if(w <= ady) {
+            break;
+        }
         w *= 0x1p-52;
     }
+    return copysign(adx, x);
 }
 
 double ALM_PROTO_OPT(fmod)(double x, double y)

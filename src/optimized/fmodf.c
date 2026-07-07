@@ -36,6 +36,15 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
+/* Reduction chunk size: 2^24 steps per iteration, matching float mantissa width. */
+#define FMODF_CHUNK_BITS    24
+/* Scale step: multiply by 2^-24 to shrink w by one chunk per iteration. */
+#define FMODF_CHUNK_DOWN    0x1p-24
+/* IEEE 754 double bias, used when constructing the initial scale exponent. */
+#define FMODF_DOUBLE_BIAS   1023
+/* Double mantissa width in bits, used when packing the scale exponent. */
+#define FMODF_MANTISSA_BITS 52
+
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
     uint32_t fay = asuint32(y) & ~SIGNBIT_SP32;
@@ -73,16 +82,16 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     if(adx < ady)
         return x;
 
-    uint64_t xe = (EXPBITS_DP64 & ax) >> 52;
-    uint64_t ye = (EXPBITS_DP64 & ay) >> 52;
+    uint64_t xe = (EXPBITS_DP64 & ax) >> FMODF_MANTISSA_BITS;
+    uint64_t ye = (EXPBITS_DP64 & ay) >> FMODF_MANTISSA_BITS;
 
-    int64_t scale = 0x3FF0000000000000;
+    int64_t scale = (int64_t)(FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
     int64_t quo = 0;
 
     if(ye < xe)
     {
-        quo = (int64_t)(xe - ye) / 24;
-        scale = (24 * quo + 1023) << 52;
+        quo = (int64_t)(xe - ye) / FMODF_CHUNK_BITS;
+        scale = (FMODF_CHUNK_BITS * quo + FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
     }
 
     double w = asdouble((uint64_t)scale) * ady;
@@ -90,7 +99,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     {
         quo--;
         adx -= (double)(uint64_t)(adx / w) * w;
-        w *= 0x1p-24;
+        w *= FMODF_CHUNK_DOWN;
     }
 
     adx -= (double)(uint64_t)(adx / w) * w;
