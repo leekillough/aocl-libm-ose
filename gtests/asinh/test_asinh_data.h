@@ -98,8 +98,6 @@ test_asinhf_conformance_data[] = {
    {0xc4F7F333, 0xc10492b4,  FE_INEXACT},  // -1983.6
    {0x42AF0000, 0x40a54632,  0},  // 87.5
    {0xc2AF0000, 0xc0a54632,  FE_INEXACT},  // -87.5
-
-   {0xc2AF0000, 0xc0a54632,  FE_INEXACT},  // -87.5
    {0x48015E40, 0x4147cbe7,  0},  // 132473
    {0xc8015E40, 0xc147cbe7,  FE_INEXACT},  // -132473
    {0x4B000000, 0x41851592,  0},  // 2^23
@@ -350,4 +348,3 @@ test_asinh_conformance_data[] = {
     {0x6337443f25f59cbbLL, 0x4078800a984ed8c7LL, 0}, //
 
 };
-
