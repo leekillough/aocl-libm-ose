@@ -85,7 +85,7 @@
  * the compiler can emit a single indexed load for each, with no branch.
  * rem from biased_exp % 3 is in {-2,-1,0,1,2}; index = rem + 2.
  */
-static const double cbrt_rem_h[5] = {
+static const double CbrtRemH[5] = {
     6.299605071544647216796875E-1,   /* cbrt(2^-2) high  0x3FE428A2F0000000  k=-2 */
     7.93700516223907470703125E-1,    /* cbrt(2^-1) high  0x3FE965FEA0000000  k=-1 */
     1.0E0,                           /* cbrt(2^0)  high  0x3FF0000000000000  k= 0 */
@@ -93,7 +93,7 @@ static const double cbrt_rem_h[5] = {
     1.58740103244781494140625E0,     /* cbrt(2^2)  high  0x3FF965FEA0000000  k= 2 */
 };
 
-static const double cbrt_rem_t[5] = {
+static const double CbrtRemT[5] = {
     1.77929718607039166806688400583E-8,  /* cbrt(2^-2) low  0x3e531ae515c447bb */
     9.76019226667272715610794680662E-9,  /* cbrt(2^-1) low  0x3e44f5b8f20ac166 */
     0.0E0,                               /* cbrt(2^0)  low  0x0000000000000000 */
@@ -110,10 +110,11 @@ ALM_PROTO_OPT(cbrt)(double x) {
 
     if (unlikely(ixe == PINFBITPATT_DP64)) {
         if (ixm == 0)
-            __alm_handle_error(ix, AMD_F_OVERFLOW);
-        else
-            __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
-        return x + x;
+            return x;  /* +-Inf: return as-is, no exception */
+        if (ixm & QNAN_MASK_64)
+            return x;  /* qNaN: propagate silently */
+        /* sNaN: quiet the NaN and raise FE_INVALID */
+        return __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
     }
 
     ixe >>= EXPSHIFTBITS_DP64;
@@ -186,9 +187,9 @@ ALM_PROTO_OPT(cbrt)(double x) {
     polyB = fma(CBRT_EXP_COEFF_6, r6, polyB);
     double poly = polyA + polyB;
 
-    /* cbrt_rem_h/t indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
-    double cbrtRem_h = cbrt_rem_h[rem + 2];
-    double cbrtRem_t = cbrt_rem_t[rem + 2];
+    /* CbrtRemH/T indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
+    double cbrtRem_h = CbrtRemH[rem + 2];
+    double cbrtRem_t = CbrtRemT[rem + 2];
 
     uint64_t fidx = (mant_idx - 256) << 1;
     flt64_t cbrtF_t = {.u = F_H_L[fidx]};

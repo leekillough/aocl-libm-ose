@@ -36,9 +36,9 @@
 static libm_test_special_data_f32
 test_cbrtf_conformance_data[] = {
    // special accuracy tests
-   {0x38800000, 0x3d214518,  0},  // min = 0.00006103515625, small enough that cbrt(x) = 1
-   {0x387FFFFF, 0x3d214518,  0},  // min - 1 bit
-   {0x38800001, 0x3d214518,  0},  // min + 1 bit
+   {0x38800000, 0x3d214518,  0},  // 5.96046e-8, cbrt ~ 0.03937
+   {0x387FFFFF, 0x3d214518,  0},  // 5.96046e-8 - 1 ULP
+   {0x38800001, 0x3d214518,  0},  // 5.96046e-8 + 1 ULP
    {0xF149F2C9, 0xd01502f9,  0},  // -9.9999994e+29
    {0xF149F2C8, 0xd01502f9,  0},  // -9.9999991e+29
    {0xF149F2CA, 0xd01502f9,  0},  // -9.9999997e+29

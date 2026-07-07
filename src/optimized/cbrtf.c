@@ -82,10 +82,11 @@ ALM_PROTO_OPT(cbrtf)(float x) {
 
     if (unlikely(ixe == PINFBITPATT_SP32)) {
         if (ixm == 0)
-            __alm_handle_errorf(ix, AMD_F_OVERFLOW);
-        else
-            __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
-        return x + x;
+            return x;  /* +-Inf: return as-is, no exception */
+        if (ixm & QNAN_MASK_32)
+            return x;  /* qNaN: propagate silently */
+        /* sNaN: quiet the NaN and raise FE_INVALID */
+        return __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
     }
 
     ixe >>= EXPSHIFTBITS_SP32;
