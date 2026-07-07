@@ -132,7 +132,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
     /* Fast path: normal x and y with diff_exp <= 52.
      * n = trunc(|x|/|y|) < 2^53, so the FMA computes |x| - n*|y| exactly. */
     double r = (double)(uint64_t)(adx / ady);
-    double w = __builtin_fma(-r, ady, adx);
+    double w = fma(-r, ady, adx);
     if(w < 0)
         w += ady;
     return copysign(w, x);

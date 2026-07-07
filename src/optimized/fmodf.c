@@ -86,7 +86,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     }
 
     double w = asdouble((uint64_t)scale) * ady;
-    while(quo > 0)
+    while (quo > 0)
     {
         quo--;
         adx -= (double)(uint64_t)(adx / w) * w;
