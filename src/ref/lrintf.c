@@ -28,27 +28,38 @@
 #include "libm_util_amd.h"
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <limits.h>
 
 long ALM_PROTO_REF(lrintf)(float x)
 {
-    long result;
+    long result = 0;
 
 #if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
     (defined(__x86_64__) || defined(_M_X64))
     __asm__("cvtss2si %1, %0" : "=r"(result) : "x"(x));
 #else
-    UT32 checkbits;
-    UT32 val_2p23;
+    /* Threshold: 2^(CHAR_BIT*sizeof(long)-1), the long overflow boundary as a float bit-pattern. */
+    static const uint32_t ovf_threshold =
+        (uint32_t)(CHAR_BIT * sizeof(long) - 1 + 127) << 23;
 
-    checkbits.f32 = x;
+    UT32 checkbits   = { .f32 = x };
+    uint32_t absbits = checkbits.u32 & POS_BITSET_F32;
 
-    if ((checkbits.u32 & POS_BITSET_F32) > EXP_VAL_23_F32) {
-        __alm_handle_errorf(SIGNBIT_DP64, AMD_F_INVALID);
-        result = (long)SIGNBIT_DP64;
+    if (absbits > ovf_threshold ||
+        (absbits == ovf_threshold && !(checkbits.u32 & SIGNBIT_SP32))) {
+        /* NaN, Inf, x > LONG_MAX, or x < LONG_MIN: out of long range.
+         * x = -2^(N-1) (LONG_MIN) has absbits == ovf_threshold with sign set,
+         * so it is excluded here and handled by the else-if branch below. */
+        __alm_handle_errorf(EXPBITS_SP32 | QNAN_MASK_32, AMD_F_INVALID);
+        result = LONG_MIN;
+    } else if (absbits > EXP_VAL_23_F32) {
+        /* 2^23 < |x| < overflow threshold: already integral in float, cast directly. */
+        result = (long)x;
     } else {
-        val_2p23.u32 = (checkbits.u32 & SIGNBIT_SP32) | EXP_VAL_23_F32;
+        UT32 val_2p23 = { .u32 = (checkbits.u32 & SIGNBIT_SP32) | EXP_VAL_23_F32 };
         result = (long)((x + val_2p23.f32) - val_2p23.f32);
     }
 #endif
+
     return result;
 }
