@@ -139,15 +139,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
                 biased_exp = (int64_t)ixe - 1023;
             }
 
-            /*
-             * Signed divide-by-3 via multiply-shift.
-             * M = 0x55555556 =~ 2^32/3 (rounded up); high 32 bits of the signed
-             * 64-bit product give floor(biased_exp/3).  Subtracting (biased_exp >> 63)
-             * -- which is 0 for non-negative and -1 for negative -- converts floor to
-             * C truncation-toward-zero.  rem is then derived with a single multiply-
-             * subtract, so the whole divide costs one imulq + sar + lea/sub.
-             */
-            int64_t quotient = ((biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 63);
+            int64_t quotient = biased_exp / 3;
             int64_t rem      = biased_exp - quotient * 3;
 
             /* Reduced mantissa in [0.5, 1): built from ixm, which is correct after

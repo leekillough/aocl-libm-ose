@@ -34,7 +34,7 @@
  * -O2/-O3 and are portable to non-x86 targets.
  *
  * cbrt(x) = cbrt(m * 2^n)
- *         = cbrt(m) * 2^quotient * cbrtf_rem[rem+2]
+ *         = cbrt(m) * 2^quotient * CbrtfRem[rem+2]
  * where m in [1,2), quotient = trunc(n/3), rem = n - 3*quotient in {-2..2}.
  *
  * cbrt(m) ~ (1 + t) * CubeRootTable[k]
@@ -77,7 +77,7 @@ static inline float UintToFloat(uint32_t u)
  * cbrt(2^k) for k in {-2,-1,0,1,2}, indexed by k+2.
  * Stored in double so that their full precision reaches the final (float) cast.
  */
-static const double cbrtf_rem[5] = {
+static const double CbrtfRem[5] = {
     0x1.428a2f98d728bp-1,   /* cbrt(2^-2)  k=-2 */
     0x1.965fea53d6e3dp-1,   /* cbrt(2^-1)  k=-1 */
     0x1.0000000000000p+0,   /* cbrt(2^0)   k= 0 */
@@ -122,8 +122,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
                 biased_exp = (int32_t)ixe - 127;
             }
 
-            /* Signed divide-by-3 via multiply-shift; single imulq + sar + sub. */
-            int32_t quotient = (int32_t)(((int64_t)biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 31);
+            int32_t quotient = biased_exp / 3;
             int32_t rem      = biased_exp - quotient * 3;
 
             /* Mantissa in [1, 2): set exponent field to 127. */
@@ -135,7 +134,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
             /*
              * All arithmetic in double so that the only rounding step is the final
              * (float) cast.  DoubleReciprocalTable and CubeRootTable hold 53-bit
-             * accurate values; cbrtf_rem is also double.  The conversion of mf
+             * accurate values; CbrtfRem is also double.  The conversion of mf
              * float->double is exact.
              */
             /* rd via FMA: product is exact internally, one rounding at the end. */
@@ -151,7 +150,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
             double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
             td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
 
-            double scale = cbrtf_rem[rem + 2] *
+            double scale = CbrtfRem[rem + 2] *
                            (double)UintToFloat((uint32_t)(quotient + 127) << 23);
 
             /* ans = (1+td)*cs = cs + td*cs; FMA avoids rounding the (1+td) sum. */
