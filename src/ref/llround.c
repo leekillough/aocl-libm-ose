@@ -49,12 +49,12 @@
 
 /* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are already exact integers. */
 #define LLROUND_INT_BITS   0x4330000000000000ULL
-/* |0.5| in double, used to construct copysign(0.5, x). */
-#define LLROUND_HALF_BITS    0x3FE0000000000000ULL
 
+/* long long is in the definition of the llround API, and is not chosen for its size */
 long long ALM_PROTO_REF(llround)(double x)
 {
     UT64 u = { .f64 = x };
+
     long long result = 0;
 
     if (unlikely(!LLROUND_INRANGE(x))) {
@@ -63,10 +63,10 @@ long long ALM_PROTO_REF(llround)(double x)
         result = LLONG_MIN;
     } else if (unlikely((u.u64 & POS_BITSET_DP64) >= LLROUND_INT_BITS)) {
         /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
-         * halfway case that rounds to even, yielding a wrong result. */
+           halfway case that rounds to even, yielding a wrong result. */
         result = (long long)x;
     } else {
-        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | LLROUND_HALF_BITS };
+        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | HALFEXPBITS_DP64 };
         result = (long long)(x + half.f64);
     }
 

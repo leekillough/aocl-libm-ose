@@ -70,9 +70,11 @@
 /* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are exact integers. */
 #define LROUND_INT_BITS   0x4330000000000000ULL
 
+/* long is in the definition of the lround API, and is not chosen for its size */
 long ALM_PROTO_REF(lround)(double x)
 {
     UT64 u = { .f64 = x };
+
     long result = 0;
 
     if (unlikely(!LROUND_INRANGE(x))) {
@@ -85,7 +87,7 @@ long ALM_PROTO_REF(lround)(double x)
          * halfway case that rounds to even, yielding a wrong result. */
         result = (long)x;
     } else {
-        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | 0x3FE0000000000000ULL };
+        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | HALFEXPBITS_DP64 };
         result = (long)(x + half.f64);
     }
 

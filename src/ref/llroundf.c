@@ -49,12 +49,12 @@
 
 /* 2^23 as a float bit-pattern: floats with |x| >= 2^23 are already exact integers. */
 #define LLROUNDF_INT_BITS   0x4B000000U
-/* |0.5| in float, used to construct copysign(0.5f, x). */
-#define LLROUNDF_HALF_BITS  0x3F000000U
 
+/* long long is in the definition of the llroundf API, and is not chosen for its size */
 long long ALM_PROTO_REF(llroundf)(float x)
 {
     UT32 u = { .f32 = x };
+
     long long result = 0;
 
     if (unlikely(!LLROUNDF_INRANGE(x))) {
@@ -63,10 +63,10 @@ long long ALM_PROTO_REF(llroundf)(float x)
         result = LLONG_MIN;
     } else if (unlikely((u.u32 & POS_BITSET_F32) >= LLROUNDF_INT_BITS)) {
         /* |x| >= 2^23: already an exact integer; adding 0.5f would create a
-         * halfway case that rounds to even, yielding a wrong result. */
+           halfway case that rounds to even, yielding a wrong result. */
         result = (long long)x;
     } else {
-        UT32 half = { .u32 = (u.u32 & SIGNBIT_SP32) | LLROUNDF_HALF_BITS };
+        UT32 half = { .u32 = (u.u32 & SIGNBIT_SP32) | HALFEXPBITS_SP32 };
         result = (long long)(x + half.f32);
     }
 

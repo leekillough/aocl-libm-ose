@@ -62,22 +62,24 @@
 /* 2^23 as a float bit-pattern: floats with |x| >= 2^23 are exact integers. */
 #define LROUNDF_INT_BITS    0x4B000000U
 
+/* long is in the definition of the lroundf API, and is not chosen for its size */
 long ALM_PROTO_REF(lroundf)(float x)
 {
     UT32 u = { .f32 = x };
+
     long result = 0;
 
     if (unlikely(!LROUNDF_INRANGE(x))) {
         /* NaN, Inf, or x outside [LONG_MIN, LONG_MAX]: out of range.
-         * LONG_MIN is returned for all such inputs regardless of sign. */
+           LONG_MIN is returned for all such inputs regardless of sign. */
         __alm_handle_errorf(EXPBITS_SP32 | QNAN_MASK_32, AMD_F_INVALID);
         result = LONG_MIN;
     } else if (unlikely((u.u32 & POS_BITSET_F32) >= LROUNDF_INT_BITS)) {
         /* |x| >= 2^23: already an exact integer; adding 0.5f would create a
-         * halfway case that rounds to even, yielding a wrong result. */
+           halfway case that rounds to even, yielding a wrong result. */
         result = (long)x;
     } else {
-        UT32 half = { .u32 = (u.u32 & SIGNBIT_SP32) | 0x3F000000U };
+        UT32 half = { .u32 = (u.u32 & SIGNBIT_SP32) | HALFEXPBITS_SP32 };
         result = (long)(x + half.f32);
     }
 
