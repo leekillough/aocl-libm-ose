@@ -36,20 +36,20 @@ long ALM_PROTO_REF(lrintf)(float x)
 
 #if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
     (defined(__x86_64__) || defined(_M_X64))
-    __asm__("cvtss2si %1, %0" : "=r"(result) : "x"(x));
+    __asm__ __volatile__("cvtss2si %1, %0" : "=r"(result) : "x"(x));
 #else
     /* Threshold: 2^(CHAR_BIT*sizeof(long)-1), the long overflow boundary as a float bit-pattern. */
-    static const uint32_t ovf_threshold =
+    static const uint32_t OvfThreshold =
         (uint32_t)(CHAR_BIT * sizeof(long) - 1 + 127) << 23;
 
     UT32 checkbits   = { .f32 = x };
     uint32_t absbits = checkbits.u32 & POS_BITSET_F32;
 
-    if (absbits > ovf_threshold ||
-        (absbits == ovf_threshold && !(checkbits.u32 & SIGNBIT_SP32))) {
+    if ((absbits > OvfThreshold) ||
+        ((absbits == OvfThreshold) && !(checkbits.u32 & SIGNBIT_SP32))) {
         /* NaN, Inf, x > LONG_MAX, or x < LONG_MIN: out of long range.
-         * x = -2^(N-1) (LONG_MIN) has absbits == ovf_threshold with sign set,
-         * so it is excluded here and handled by the else-if branch below. */
+           x = -2^(N-1) (LONG_MIN) has absbits == OvfThreshold with sign set,
+           so it is excluded here and handled by the else-if branch below. */
         __alm_handle_errorf(EXPBITS_SP32 | QNAN_MASK_32, AMD_F_INVALID);
         result = LONG_MIN;
     } else if (absbits > EXP_VAL_23_F32) {
