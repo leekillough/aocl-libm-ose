@@ -38,8 +38,8 @@
 //   each of ax-1u, ay-1u is at most 0x7f7ffffe < 0x7f7fffff.
 //   ay=0: ay-1u wraps to 0xffffffff >= 0x7f7fffff.
 //   ax=0: ax-1u wraps to 0xffffffff >= 0x7f7fffff.
-//   x/y=Inf (0x7f800000): ax/ay-1u = 0x7f7fffff >= 0x7f7fffff.
-//   x/y=NaN (> 0x7f800000): ax/ay-1u >= 0x7f800000 > 0x7f7fffff.
+//   ax/ay=Inf (0x7f800000): (ax/ay - 1u) = 0x7f7fffff >= 0x7f7fffff.
+//   ax/ay=NaN (> 0x7f800000): (ax/ay - 1u) >= 0x7f800000 > 0x7f7fffff.
 //   Note: OR of two values each <= 0x7f7ffffe can reach 0x7f7fffff
 //   (false positive for FLT_MAX pairs), so test each operand separately.
 //
@@ -52,14 +52,14 @@
 //   Single-precision path (ax > ay, exponent diff <= ~24):
 //     n = RneF(ax/ay): vroundss imm=8 (SSE4.1, rounding-mode independent) or
 //     trunc(q+0.5) fallback.  r = ax - n*ay via vfnmadd231ss.
-//     If r in [0, ay): result is exact, return immediately.
-//     If r < 0 (n rounded up) or r >= ay (exponent diff > ~24): fall back to double.
+//     If r in [0, ay/2): result is exact, return immediately.
+//     Otherwise (r < 0, r in [ay/2, ay), or r >= ay): fall back to double.
 //
 //   Large-exponent path (d > 52): 24-bit chunk reduction, then single step.
 //
 // Special cases (IEEE 754):
 //   remainder(x,   0)  -> NaN, invalid
-//   remainder(Inf, y)  -> NaN, invalid  (even if y is a quiet NaN)
+//   remainder(Inf, y)  -> NaN, invalid  (when y is not NaN)
 //   remainder(SNaN, y) -> NaN, invalid
 //   remainder(x, SNaN) -> NaN, invalid
 //   remainder(QNaN, y) -> QNaN          (quiet, no exception)
@@ -116,15 +116,14 @@ static inline uint32_t FloatToUint(float f) { uint32_t u; memcpy(&u, &f, 4); ret
 float ALM_PROTO_OPT(remainderf)(float x, float y)
 {
     uint32_t ix = FloatToUint(x);
-    uint32_t iy = FloatToUint(y);
-    uint32_t ax = ix & 0x7fffffffu;
-    uint32_t ay = iy & 0x7fffffffu;
+    uint32_t ax = ix & POS_BITSET_F32;
+    uint32_t ay = FloatToUint(y) & POS_BITSET_F32;
 
     // Single branch for all special cases.  For normal finite non-zero
     // inputs ax,ay in [1, 0x7f7fffff], so ax-1u and ay-1u are each at most
     // 0x7f7ffffe -- both strictly below 0x7f7fffffu.  The branch is taken
     // only when at least one of x, y is zero, Inf, or NaN.
-    if (unlikely((ax - 1u) >= 0x7f7fffffu || (ay - 1u) >= 0x7f7fffffu)) {
+    if (unlikely((ax - 1u) >= POS_HNORMAL_F32 || (ay - 1u) >= POS_HNORMAL_F32)) {
 
         // Signaling NaN (SNaN): exponent=0xff, quiet bit (bit 22) clear,
         // mantissa non-zero.  Uint32 range [0x7f800001, 0x7fbfffff].
@@ -134,14 +133,13 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
             (ay - 0x7f800001u) < 0x003fffffu)
             return __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
 
-        // x=Inf is invalid regardless of y (even if y is a quiet NaN):
-        // check before QNaN propagation so remainder(Inf, QNaN) -> FE_INVALID.
-        if (ax == 0x7f800000u)
-            return __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
-
         // Quiet NaN: propagate without raising an exception.
-        if (ax > 0x7f800000u) return x;  // x=QNaN
-        if (ay > 0x7f800000u) return y;  // y=QNaN
+        if (ax > POS_INF_F32) return x;  // x=QNaN
+        if (ay > POS_INF_F32) return y;  // y=QNaN
+
+        // x=Inf is invalid (y is confirmed not NaN here).
+        if (ax == POS_INF_F32)
+            return __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
 
         // y=0: invalid (x is confirmed finite non-zero here).
         if (ay == 0u)
@@ -167,7 +165,7 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
         float r = fax - fay;  // exact by Sterbenz, n=1
         if (r == 0.0f)
             return copysignf(0.0f, x);
-        return ix & 0x80000000u ? -r : r;
+        return ix & SIGNBIT_SP32 ? -r : r;
     }
 
     // |x| > |y|.  Attempt single-precision reduction first.
@@ -194,7 +192,7 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
     if (likely(FloatToUint(r_f) < half_ay)) {
         if (r_f == 0.0f)
             return copysignf(0.0f, x);
-        return ix & 0x80000000u ? -r_f : r_f;
+        return ix & SIGNBIT_SP32 ? -r_f : r_f;
     }
 
     // Float path inaccurate: r_f < 0 (RneF rounded up, or fay is a tiny
@@ -224,15 +222,13 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
         if (r == 0.0)
             return copysignf(0.0f, x);
         float rf = (float)(r < 0.0 ? -r : r);
-        uint32_t sign_r = r < 0.0 ? 0x80000000u : 0u;
-        uint32_t result_bits = FloatToUint(rf) | ((ix & 0x80000000u) ^ sign_r);
+        uint32_t sign_r = r < 0.0 ? SIGNBIT_SP32 : 0u;
+        uint32_t result_bits = FloatToUint(rf) | ((ix & SIGNBIT_SP32) ^ sign_r);
         float ret;
         memcpy(&ret, &result_bits, 4);
         return ret;
-    }
-
-    // d > 52: multi-step 24-bit chunk reduction.
-    {
+    } else {
+        // d > 52: multi-step 24-bit chunk reduction.
         int32_t nsteps = d / 24;
         uint64_t wu = ady_bits + ((uint64_t)(24 * nsteps) << 52);
         double w = asdouble(wu);
@@ -249,8 +245,8 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
         if (adx == 0.0)
             return copysignf(0.0f, x);
         float rf = (float)(adx < 0.0 ? -adx : adx);
-        uint32_t sign_r = adx < 0.0 ? 0x80000000u : 0u;
-        uint32_t result_bits = FloatToUint(rf) | ((ix & 0x80000000u) ^ sign_r);
+        uint32_t sign_r = adx < 0.0 ? SIGNBIT_SP32 : 0u;
+        uint32_t result_bits = FloatToUint(rf) | ((ix & SIGNBIT_SP32) ^ sign_r);
         float ret;
         memcpy(&ret, &result_bits, 4);
         return ret;
