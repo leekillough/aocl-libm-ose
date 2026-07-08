@@ -29,7 +29,7 @@
 //
 // Returns x - n*y where n = roundTiesToEven(x/y) (nearest-even integer).
 //
-// Algorithm (mirrors remainderf.c structure):
+// Algorithm:
 //
 //   Single combined special-case check:
 //     (ax - 1) >= 0x7fefffffffffffff || (ay - 1) >= 0x7fefffffffffffff
@@ -56,7 +56,7 @@
 //
 // Special cases (IEEE 754):
 //   remainder(x,   0) -> NaN, invalid
-//   remainder(Inf, y) -> NaN, invalid  (even if y is a quiet NaN)
+//   remainder(Inf, y) -> NaN, invalid  (when y is not NaN)
 //   remainder(SNaN, y) -> NaN, invalid
 //   remainder(x, SNaN) -> NaN, invalid
 //   remainder(QNaN, y) -> QNaN         (quiet, no exception)
@@ -102,9 +102,8 @@ static inline double RneD(double q) { return trunc(q + 0.5); }
 double ALM_PROTO_OPT(remainder)(double x, double y)
 {
     uint64_t ix = asuint64(x);
-    uint64_t iy = asuint64(y);
     uint64_t ax = ix & UINT64_C(0x7fffffffffffffff);
-    uint64_t ay = iy & UINT64_C(0x7fffffffffffffff);
+    uint64_t ay = asuint64(y) & UINT64_C(0x7fffffffffffffff);
     double result;
 
     // Single branch for all special cases.  For normal finite non-zero
@@ -121,16 +120,15 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
             (ay - UINT64_C(0x7ff0000000000001)) < UINT64_C(0x0007ffffffffffff))
             result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
 
-        // x=Inf is invalid regardless of y (even if y is a quiet NaN):
-        // check before QNaN propagation so remainder(Inf, QNaN) -> FE_INVALID.
-        else if (ax == UINT64_C(0x7ff0000000000000))
-            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
-
         // Quiet NaN: propagate without raising an exception.
         else if (ax > UINT64_C(0x7ff0000000000000))
             result = x;   // x=QNaN
         else if (ay > UINT64_C(0x7ff0000000000000))
             result = y;   // y=QNaN
+
+        // x=Inf is invalid (y is confirmed not NaN here).
+        else if (ax == UINT64_C(0x7ff0000000000000))
+            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
 
         // y=0: invalid (x is confirmed finite non-zero here).
         else if (ay == 0)
