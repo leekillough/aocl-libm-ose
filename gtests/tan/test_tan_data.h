@@ -53,11 +53,11 @@ test_tanf_conformance_data[] = {
     {0x3F490FDB, POS_ONE_F32, 0},            //tan(45)=1
     {0xbf490fdb, NEG_ONE_F32, 0},            //tan(-45) = -tan(45) = -1
     #if defined(_WIN64) || defined(_WIN32)
-        {0x3fc90fdb, 0xcbae8a4a, FE_INEXACT},            //tan(90)=+INF
-        {0xbfc90fdb, 0x4bae8a4a, FE_INEXACT},            //tan(-Pi/2) = -INF
+        {0x3fc90fdb, 0xcbae8a4a, FE_INEXACT},            //tanf(pi/2 float) ~ -22877332
+        {0xbfc90fdb, 0x4bae8a4a, FE_INEXACT},            //tanf(-pi/2 float) ~ +22877332
     #else
-        {0x3fc90fdb, 0xcbae8a4a, FE_INVALID},            //tan(90)=+INF
-        {0xbfc90fdb, 0x4bae8a4a, FE_INVALID},            //tan(-Pi/2) = -INF
+        {0x3fc90fdb, 0xcbae8a4a, FE_INVALID},            //tanf(pi/2 float) ~ -22877332
+        {0xbfc90fdb, 0x4bae8a4a, FE_INVALID},            //tanf(-pi/2 float) ~ +22877332
     #endif
     {0x3C000001, 0x3c0000ac, 0},
     {0x39000001, 0x39000001, 0},

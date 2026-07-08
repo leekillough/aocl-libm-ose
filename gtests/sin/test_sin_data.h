@@ -49,7 +49,7 @@ test_sinf_conformance_data[] = {
     {POS_INF_F32, 0xffc00000, FE_INVALID,},      //inf
     {NEG_INF_F32, 0xffc00000, FE_INVALID,},      //-inf
     {NEG_ONE_F32, 0xbf576aa4, FE_INEXACT,}, //-1
-    {POS_PI_F32, 0x3528885a, 0,}, //sin(pi)=0
+    {POS_PI_F32, 0x3528885a, 0,}, //sin(POS_PI_F32) ~ 6.28e-7 (non-zero: POS_PI_F32 != pi)
     {0x3B800000, 0x3B7FFFD5, 0},    //sini
     {0x3FC90FDB, 0x3f800000, 0},     //sin(Pi/2)=1
     /*some vals taken from old test framework*/
@@ -157,9 +157,9 @@ test_sin_conformance_data[] = {
     {NEG_SNAN_F64, 0xfff2000000000000, FE_INVALID,}, //sin(-snan)=-snan
     {POS_QNAN_F64, 0x7ff87ff7e0000000, 0,},          //sin(qnan)=qnan
     {NEG_QNAN_F64, 0xfffa000000000000, 0,}, //sin(-qnan)
-    {POS_PI_F64,         0x3ca1a62633145c07, 0,},  //sin(pi)=0
-    {0x3ff921fb544486e0, 0x3ff0000000000000, 0,},  //sin(n*Pi)=sin(pi) for any n=1,2,3..
-    {0x4012D97C7F336528, 0xbff0000000000000, 0,}, //sin(270)
+    {POS_PI_F64,         0x3ca1a62633145c07, 0,},  //sin(POS_PI_F64) ~ 1.22e-16 (non-zero: POS_PI_F64 != pi)
+    {0x3ff921fb544486e0, 0x3ff0000000000000, 0,},  //sin(pi/2) = 1
+    {0x4012D97C7F336528, 0xbff0000000000000, 0,}, //sin(3*pi/2) = -1
 
     {0xc000000000000000, 0xbfed18f6ead1b446, 0}, //-2
     {0x3f18000000000000, 0x3F17FFFFFF700000, 0}, //9.1552734375E-05  =  2^-14 *1.5

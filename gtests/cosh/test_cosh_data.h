@@ -36,7 +36,7 @@
 static libm_test_special_data_f32
 test_coshf_conformance_data[] = {
    // special accuracy tests
-   {0xc9b60000, 0x7f800000,  0}, //-0x1.6cp+20 = -inf
+   {0xc9b60000, 0x7f800000,  0}, //-0x1.6cp+20 => +inf (cosh is even and non-negative)
    {0x38800000, 0x3f800000,  0}, //min= 0.00006103515625
    {0x387FFFFF, 0x3f800000,  0}, //min - 1 bit
    {0x38800001, 0x3f800000,  0}, //min + 1 bit
