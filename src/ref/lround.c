@@ -28,25 +28,66 @@
 #include "libm_util_amd.h"
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
-#include <string.h>
+#include <limits.h>
+
+/*
+ * Overflow thresholds for lround(double), derived from LONG_MIN and LONG_MAX.
+ *
+ * 32-bit long (LONG_MAX == 0x7fffffff):
+ *   LONG_MIN = -2^31 and LONG_MAX = 2^31-1 are both exactly representable as double.
+ *   (double)LONG_MAX + 0.5 = 2^31 - 0.5  (exact; this is 0x1.fffffffep+30).
+ *   (double)LONG_MIN - 0.5 = -(2^31+0.5) (exact; this is -0x1.00000001p+31).
+ *   Both bounds are exactly representable, so strict > and < correctly exclude
+ *   the overflowing boundary values.
+ *
+ * 64-bit long (LONG_MAX == 0x7fffffffffffffff):
+ *   LONG_MIN = -2^63 is exactly representable; LONG_MAX = 2^63-1 rounds to 2^63.
+ *   (double)LONG_MAX + 0.5 rounds to 2^63  (ULP at 2^63 is 2048, swamps 0.5).
+ *   (double)LONG_MIN - 0.5 rounds to -2^63 (ULP at 2^63 swamps 0.5).
+ *   LROUND_MIN = -2^63 = LONG_MIN as double, which is a valid input, so >= is
+ *   required on the lower bound.  LROUND_MAX = 2^63 is itself overflowing, so
+ *   < (strict) is required on the upper bound.
+ *
+ * NaN: ordered comparisons raise FE_INVALID for NaN per IEEE 754 / C Annex F;
+ * __alm_handle_error raises it again for Inf and out-of-range finite values.
+ * LONG_MIN is returned for all out-of-range inputs regardless of sign, matching
+ * the x86 integer-indefinite value from cvtsd2si.
+ *
+ * Doubles with |x| >= 2^52 are already exact integers; adding 0.5 would land on
+ * a halfway case that rounds to even, yielding the wrong result for odd integers.
+ * Those values are handled by direct cast in the else-if branch.
+ */
+#if LONG_MAX == 0x7fffffff
+#define LROUND_MIN    ((double)LONG_MIN - 0.5)    /* -(2^31+0.5), exact */
+#define LROUND_MAX    ((double)LONG_MAX + 0.5)    /* 2^31-0.5, exact */
+#define LROUND_INRANGE(x)  ((x) > LROUND_MIN && (x) < LROUND_MAX)
+#else
+#define LROUND_MIN    ((double)LONG_MIN - 0.5)    /* rounds to -2^63 = LONG_MIN */
+#define LROUND_MAX    ((double)LONG_MAX + 0.5)    /* rounds to 2^63 (overflows) */
+#define LROUND_INRANGE(x)  ((x) >= LROUND_MIN && (x) < LROUND_MAX)
+#endif
+
+/* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are exact integers. */
+#define LROUND_INT_BITS   0x4330000000000000ULL
 
 long ALM_PROTO_REF(lround)(double x)
 {
-    uint64_t ui;
-    memcpy(&ui, &x, sizeof(ui));
-    ui = (ui & 0x8000000000000000ULL) | 0x3FE0000000000000ULL;
-    double half;
-    memcpy(&half, &ui, sizeof(half));
-#if defined(_WIN64) || defined(_WIN32)
-    if (unlikely(!(x > -0x1.00000001p+31 && x < 0x1.fffffffep+30))) {
-        __alm_handle_error(0x80000000ULL, AMD_F_NONE);
-        return (long)0x80000000;
+    UT64 u = { .f64 = x };
+    long result = 0;
+
+    if (unlikely(!LROUND_INRANGE(x))) {
+        /* NaN, Inf, or x outside [LONG_MIN, LONG_MAX]: out of range.
+         * LONG_MIN is returned for all such inputs regardless of sign. */
+        __alm_handle_error(EXPBITS_DP64 | QNAN_MASK_64, AMD_F_INVALID);
+        result = LONG_MIN;
+    } else if (unlikely((u.u64 & POS_BITSET_DP64) >= LROUND_INT_BITS)) {
+        /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
+         * halfway case that rounds to even, yielding a wrong result. */
+        result = (long)x;
+    } else {
+        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | 0x3FE0000000000000ULL };
+        result = (long)(x + half.f64);
     }
-#else
-    if (unlikely(!(x >= -0x1.0p+63 && x < 0x1.0p+63))) {
-        __alm_handle_error(0x8000000000000000ULL, AMD_F_NONE);
-        return (long)0x8000000000000000ULL;
-    }
-#endif
-    return (long)(x + half);
+
+    return result;
 }

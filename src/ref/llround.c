@@ -28,39 +28,46 @@
 #include "libm_util_amd.h"
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
-#include <string.h>
+#include <limits.h>
 
-/* Bounds for the valid llround(double) input range. */
-#define LLROUND_D_MAX        0x1.0p+63          /* 2^63: first double too large for long long */
-#define LLROUND_D_MIN       -0x1.0p+63          /* -2^63: long long minimum as double */
-/* Bit pattern of 2^52: doubles with |x| >= 2^52 are already exact integers. */
-#define LLROUND_D_INT_BITS   0x4330000000000000ULL
-/* Bit pattern returned for out-of-range input: LLONG_MIN = 0x8000000000000000. */
-#define LLROUND_OOR_BITS     0x8000000000000000ULL
-/* Sign-bit mask and exponent of ±0.5 in double (used to construct signed half). */
-#define LLROUND_SIGN_MASK    0x8000000000000000ULL
-#define LLROUND_HALF_BITS    0x3FE0000000000000ULL  /* |0.5| in double */
-/* Absolute-value mask for double. */
-#define LLROUND_ABS_MASK     0x7fffffffffffffffULL
+/*
+ * Overflow thresholds for llround(double), derived from LLONG_MIN and LLONG_MAX.
+ *
+ * LLONG_MIN = -2^63 is exactly representable as double; subtracting 0.5 rounds
+ * back to -2^63 (ULP at 2^63 is 2048, which swamps 0.5).  So LLROUND_MIN =
+ * -2^63 = LLONG_MIN as double, which is itself a valid input; use >= on the lower.
+ * LLONG_MAX = 2^63-1 rounds to 2^63 in double; adding 0.5 stays 2^63.  So
+ * LLROUND_MAX = 2^63 is itself overflowing; use < (strict) on the upper bound.
+ *
+ * NaN: ordered comparisons raise FE_INVALID for NaN per IEEE 754 / C Annex F;
+ * __alm_handle_error raises it again for Inf and out-of-range finite values.
+ * LLONG_MIN is returned for all out-of-range inputs regardless of sign.
+ */
+#define LLROUND_MIN       ((double)LLONG_MIN - 0.5)   /* rounds to -2^63 = LLONG_MIN */
+#define LLROUND_MAX       ((double)LLONG_MAX + 0.5)   /* rounds to 2^63 (overflows) */
+#define LLROUND_INRANGE(x) ((x) >= LLROUND_MIN && (x) < LLROUND_MAX)
+
+/* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are already exact integers. */
+#define LLROUND_INT_BITS   0x4330000000000000ULL
+/* |0.5| in double, used to construct copysign(0.5, x). */
+#define LLROUND_HALF_BITS    0x3FE0000000000000ULL
 
 long long ALM_PROTO_REF(llround)(double x)
 {
-    uint64_t ui;
-    memcpy(&ui, &x, sizeof(ui));
-    long long result;
+    UT64 u = { .f64 = x };
+    long long result = 0;
 
-    if (unlikely(!((x >= LLROUND_D_MIN) && (x < LLROUND_D_MAX)))) {
-        __alm_handle_error(LLROUND_OOR_BITS, AMD_F_NONE);
-        result = (long long)LLROUND_OOR_BITS;
-    } else if ((ui & LLROUND_ABS_MASK) >= LLROUND_D_INT_BITS) {
+    if (unlikely(!LLROUND_INRANGE(x))) {
+        /* NaN, Inf, or x outside [-2^63, 2^63): out of long long range. */
+        __alm_handle_error(EXPBITS_DP64 | QNAN_MASK_64, AMD_F_INVALID);
+        result = LLONG_MIN;
+    } else if (unlikely((u.u64 & POS_BITSET_DP64) >= LLROUND_INT_BITS)) {
         /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
-         * halfway case that rounds to even, corrupting exact odd integers. */
+         * halfway case that rounds to even, yielding a wrong result. */
         result = (long long)x;
     } else {
-        ui = (ui & LLROUND_SIGN_MASK) | LLROUND_HALF_BITS;
-        double half;
-        memcpy(&half, &ui, sizeof(half));
-        result = (long long)(x + half);
+        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | LLROUND_HALF_BITS };
+        result = (long long)(x + half.f64);
     }
 
     return result;

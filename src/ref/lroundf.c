@@ -28,26 +28,58 @@
 #include "libm_util_amd.h"
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
-#include <string.h>
+#include <limits.h>
+
+/*
+ * Overflow thresholds for lroundf(float), derived from LONG_MIN and LONG_MAX.
+ *
+ * For float inputs, ULP at the magnitude of LONG_MIN and LONG_MAX is far larger
+ * than 0.5f in both the 32-bit and 64-bit long cases:
+ *   32-bit long: ULP at 2^31 in float is 2^8 = 256;
+ *     (float)LONG_MIN - 0.5f rounds to (float)LONG_MIN = -2^31.
+ *     (float)LONG_MAX + 0.5f: (float)LONG_MAX rounds to 2^31; +0.5f stays 2^31.
+ *   64-bit long: ULP at 2^63 in float is 2^40;
+ *     (float)LONG_MIN - 0.5f rounds to (float)LONG_MIN = -2^63.
+ *     (float)LONG_MAX + 0.5f rounds to 2^63.
+ *
+ * In both cases LROUNDF_MIN = (float)LONG_MIN (exactly representable as a power
+ * of two and a valid lroundf input), so >= is required on the lower bound.
+ * LROUNDF_MAX = 2^(N-1) is itself overflowing, so < (strict) is used on the upper.
+ * No #if on LONG_MAX is needed: the same condition form applies to both sizes.
+ *
+ * NaN: ordered comparisons raise FE_INVALID for NaN per IEEE 754 / C Annex F;
+ * __alm_handle_errorf raises it again for Inf and out-of-range finite values.
+ * LONG_MIN is returned for all out-of-range inputs regardless of sign.
+ *
+ * Floats with |x| >= 2^23 are already exact integers; adding 0.5f would land on
+ * a halfway case that rounds to even, yielding the wrong result for odd integers.
+ * Those values are handled by direct cast in the else-if branch.
+ */
+#define LROUNDF_MIN  ((float)LONG_MIN - 0.5f)  /* rounds to (float)LONG_MIN */
+#define LROUNDF_MAX  ((float)LONG_MAX + 0.5f)  /* rounds to 2^(N-1) */
+#define LROUNDF_INRANGE(x) ((x) >= LROUNDF_MIN && (x) < LROUNDF_MAX)
+
+/* 2^23 as a float bit-pattern: floats with |x| >= 2^23 are exact integers. */
+#define LROUNDF_INT_BITS    0x4B000000U
 
 long ALM_PROTO_REF(lroundf)(float x)
 {
-    uint32_t ui;
-    memcpy(&ui, &x, sizeof(ui));
-    ui = (ui & 0x80000000U) | 0x3F000000U;
-    float half;
-    memcpy(&half, &ui, sizeof(half));
-#if defined(_WIN64) || defined(_WIN32)
-    /* >= on the lower bound because -0x1.0p+31f is -2^31 = LONG_MIN, which is valid */
-    if (unlikely(!(x >= -0x1.0p+31f && x < 0x1.0p+31f))) {
-        __alm_handle_errorf(0x80000000ULL, AMD_F_NONE);
-        return (long)0x80000000;
+    UT32 u = { .f32 = x };
+    long result = 0;
+
+    if (unlikely(!LROUNDF_INRANGE(x))) {
+        /* NaN, Inf, or x outside [LONG_MIN, LONG_MAX]: out of range.
+         * LONG_MIN is returned for all such inputs regardless of sign. */
+        __alm_handle_errorf(EXPBITS_SP32 | QNAN_MASK_32, AMD_F_INVALID);
+        result = LONG_MIN;
+    } else if (unlikely((u.u32 & POS_BITSET_F32) >= LROUNDF_INT_BITS)) {
+        /* |x| >= 2^23: already an exact integer; adding 0.5f would create a
+         * halfway case that rounds to even, yielding a wrong result. */
+        result = (long)x;
+    } else {
+        UT32 half = { .u32 = (u.u32 & SIGNBIT_SP32) | 0x3F000000U };
+        result = (long)(x + half.f32);
     }
-#else
-    if (unlikely(!(x >= -0x1.0p+63f && x < 0x1.0p+63f))) {
-        __alm_handle_errorf(0x8000000000000000ULL, AMD_F_NONE);
-        return (long)0x8000000000000000ULL;
-    }
-#endif
-    return (long)(x + half);
+
+    return result;
 }

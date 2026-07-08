@@ -28,39 +28,46 @@
 #include "libm_util_amd.h"
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
-#include <string.h>
+#include <limits.h>
 
-/* Bounds for the valid llroundf(float) input range. */
-#define LLROUNDF_MAX        0x1.0p+63f          /* 2^63: first float too large for long long */
-#define LLROUNDF_MIN       -0x1.0p+63f          /* -2^63: long long minimum */
-/* Bit pattern of 2^23: floats with |x| >= 2^23 are already exact integers. */
+/*
+ * Overflow thresholds for llroundf(float), derived from LLONG_MIN and LLONG_MAX.
+ *
+ * LLONG_MIN = -2^63 is exactly representable as float; subtracting 0.5f rounds
+ * back to -2^63 (ULP at 2^63 in float is 2^40, which swamps 0.5f).  So
+ * LLROUNDF_MIN = -2^63 = LLONG_MIN as float, which is itself a valid input;
+ * use >= on the lower bound.  LLONG_MAX = 2^63-1 rounds to 2^63 in float;
+ * adding 0.5f stays 2^63.  So LLROUNDF_MAX = 2^63 overflows; use < (strict).
+ *
+ * NaN: ordered comparisons raise FE_INVALID for NaN per IEEE 754 / C Annex F;
+ * __alm_handle_errorf raises it again for Inf and out-of-range finite values.
+ * LLONG_MIN is returned for all out-of-range inputs regardless of sign.
+ */
+#define LLROUNDF_MIN        ((float)LLONG_MIN - 0.5f)   /* rounds to -2^63 = LLONG_MIN */
+#define LLROUNDF_MAX        ((float)LLONG_MAX + 0.5f)   /* rounds to 2^63 (overflows) */
+#define LLROUNDF_INRANGE(x) ((x) >= LLROUNDF_MIN && (x) < LLROUNDF_MAX)
+
+/* 2^23 as a float bit-pattern: floats with |x| >= 2^23 are already exact integers. */
 #define LLROUNDF_INT_BITS   0x4B000000U
-/* Bit pattern returned for out-of-range input: LLONG_MIN = 0x8000000000000000. */
-#define LLROUNDF_OOR_BITS   0x8000000000000000ULL
-/* Sign-bit mask and exponent of ±0.5 in float (used to construct signed half). */
-#define LLROUNDF_SIGN_MASK  0x80000000U
-#define LLROUNDF_HALF_BITS  0x3F000000U         /* |0.5| in float */
-/* Absolute-value mask for float. */
-#define LLROUNDF_ABS_MASK   0x7fffffffU
+/* |0.5| in float, used to construct copysign(0.5f, x). */
+#define LLROUNDF_HALF_BITS  0x3F000000U
 
 long long ALM_PROTO_REF(llroundf)(float x)
 {
-    uint32_t ui;
-    memcpy(&ui, &x, sizeof(ui));
-    long long result;
+    UT32 u = { .f32 = x };
+    long long result = 0;
 
-    if (unlikely(!((x >= LLROUNDF_MIN) && (x < LLROUNDF_MAX)))) {
-        __alm_handle_errorf(LLROUNDF_OOR_BITS, AMD_F_NONE);
-        result = (long long)LLROUNDF_OOR_BITS;
-    } else if ((ui & LLROUNDF_ABS_MASK) >= LLROUNDF_INT_BITS) {
-        /* |x| >= 2^23: already an exact integer; adding 0.5 would create a
-         * halfway case that rounds to even, corrupting exact odd integers. */
+    if (unlikely(!LLROUNDF_INRANGE(x))) {
+        /* NaN, Inf, or x outside [-2^63, 2^63): out of long long range. */
+        __alm_handle_errorf(EXPBITS_SP32 | QNAN_MASK_32, AMD_F_INVALID);
+        result = LLONG_MIN;
+    } else if (unlikely((u.u32 & POS_BITSET_F32) >= LLROUNDF_INT_BITS)) {
+        /* |x| >= 2^23: already an exact integer; adding 0.5f would create a
+         * halfway case that rounds to even, yielding a wrong result. */
         result = (long long)x;
     } else {
-        ui = (ui & LLROUNDF_SIGN_MASK) | LLROUNDF_HALF_BITS;
-        float half;
-        memcpy(&half, &ui, sizeof(half));
-        result = (long long)(x + half);
+        UT32 half = { .u32 = (u.u32 & SIGNBIT_SP32) | LLROUNDF_HALF_BITS };
+        result = (long long)(x + half.f32);
     }
 
     return result;
