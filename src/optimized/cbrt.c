@@ -104,40 +104,30 @@ static const double CbrtRemT[5] = {
 
 double
 ALM_PROTO_OPT(cbrt)(double x) {
-    flt64_t  xdu = {.d = x};
-    uint64_t ix  = xdu.u;
-    uint64_t ixe = EXPBITS_DP64 & ix;
-    uint64_t ixm = MANTBITS_DP64 & ix;
-    double result = 0.0;
+    flt64_t  xdu    = { .d = x };
+    uint64_t ix     = xdu.u;
+    uint64_t ixe    = EXPBITS_DP64 & ix;
+    uint64_t ixm    = MANTBITS_DP64 & ix;
+    double   result = x;   /* cbrt(x) -> x if x is +/-0, +/-Inf, qNaN */
 
-    if (unlikely(ixe == PINFBITPATT_DP64)) {
-        if (ixm == 0) {
-            result = x;  /* +-Inf: return as-is, no exception */
-        } else if (ixm & QNAN_MASK_64) {
-            result = x;  /* qNaN: propagate silently */
-        } else {
-            /* sNaN: quiet the NaN and raise FE_INVALID */
-            result = __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
-        }
-    } else {
+    if (likely(ixe != PINFBITPATT_DP64)) {
+        /* Not +/-Inf, NaN */
         ixe >>= EXPSHIFTBITS_DP64;
-        if (unlikely((ixe == 0) && (ixm == 0))) {
-            result = x;  /* +-0: return as-is */
-        } else {
-            int64_t biased_exp = 0;
+        if (likely((ixe | ixm) != 0)) {
+            /* ixe is in [0, 2046], so the conversion to int64_t is safe */
+            int64_t biased_exp = (int64_t)ixe - 1023;
+
             if (unlikely(ixe == 0)) {
                 /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
-                flt64_t tmp = {.u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64};
-                --tmp.d;
-                /* Extracted biased exponent is in [971, 1022], well within int64_t range. */
+                flt64_t tmp = { .u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64 };
+                tmp.d -= 1.0;
+                /* Extracted biased exponent is in [971, 1022], within int64_t range. */
                 biased_exp = (int64_t)((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64)
                              + (EMIN_DP64 - 1023);
                 ixm = tmp.u & MANTBITS_DP64;
-            } else {
-                /* ixe in [1, 2046], well within int64_t range. */
-                biased_exp = (int64_t)ixe - 1023;
             }
 
+            /* The compiler strength-reduces the division to modular multiplication */
             int64_t quotient = biased_exp / 3;
             int64_t rem      = biased_exp - quotient * 3;
 
@@ -157,8 +147,9 @@ ALM_PROTO_OPT(cbrt)(double x) {
              * subtract the magic constant -- IEEE 754 exact integer representability
              * guarantees the result equals mant_idx exactly.
              */
-            flt64_t midx = {.u = mant_idx | 0x4330000000000000ULL};
-            flt64_t mant = {.u = InverseTable[mant_idx - 256]};
+            flt64_t midx = { .u = mant_idx | EXP_VAL_52_DP64 };
+            flt64_t mant = { .u = InverseTable[mant_idx - 256] };
+
             /*
              * r = mant * (rdu - mant_idx/512).  FMA form avoids rounding the
              * inner subtraction before the outer multiply: computes
@@ -210,6 +201,12 @@ ALM_PROTO_OPT(cbrt)(double x) {
              */
             flt64_t scale = {.u = (uint64_t)(quotient + 1023) << 52};
             result = copysign(ans * scale.d, x);
+        }
+    } else {
+        /* +/-Inf, NaN */
+        if ((ixm != 0) && ((ixm & QNAN_MASK_64) == 0)) {
+            /* sNaN: quiet the NaN and raise FE_INVALID */
+            result = __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
         }
     }
 

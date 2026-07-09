@@ -87,41 +87,28 @@ static const double CbrtfRem[5] = {
 
 float
 ALM_PROTO_OPT(cbrtf)(float x) {
-    uint32_t ix  = FloatToUint(x);
-    uint32_t ixe = EXPBITS_SP32 & ix;
-    uint32_t ixm = MANTBITS_SP32 & ix;
-    float result = 0.0f;
+    uint32_t ix     = FloatToUint(x);
+    uint32_t ixe    = EXPBITS_SP32 & ix;
+    uint32_t ixm    = MANTBITS_SP32 & ix;
+    float    result = x;   /* cbrtf(x) -> x if x is +/-0, +/-Inf, qNaN */
 
-    if (unlikely(ixe == PINFBITPATT_SP32)) {
-        if (ixm == 0) {
-            result = x;  /* +-Inf: return as-is, no exception */
-        } else if ((ixm & QNAN_MASK_32) != 0) {
-            result = x;  /* qNaN: propagate silently */
-        } else {
-            /* sNaN: quiet the NaN and raise FE_INVALID */
-            result = __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
-        }
-    } else {
+    if (likely(ixe != PINFBITPATT_SP32)) {
+        /* Not +/-Inf, NaN */
         ixe >>= EXPSHIFTBITS_SP32;
+        if (likely((ixe | ixm) != 0)) {
+            /* ixe is in [0, 254], so the conversion to int32_t is safe */
+            int32_t biased_exp = (int32_t)ixe - 127;
 
-        int32_t biased_exp = 0;
-
-        if (unlikely((ixe == 0) && (ixm == 0))) {
-            result = x;  /* +-0: return as-is */
-        } else {
             if (unlikely(ixe == 0)) {
                 /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
-                uint32_t tmp_u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32;
-                tmp_u = FloatToUint(UintToFloat(tmp_u) - 1.0f);
-                /* Extracted biased exponent is in [104, 126], well within int32_t range. */
+                uint32_t tmp_u = FloatToUint(UintToFloat((ix & POS_BITSET_F32) | ONEEXPBITS_SP32) - 1.0f);
+                /* Extracted biased exponent is in [104, 126], within int32_t range. */
                 biased_exp = (int32_t)((tmp_u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32)
                              + (EMIN_SP32 - 127);
                 ixm = tmp_u & MANTBITS_SP32;
-            } else {
-                /* ixe in [1, 254], well within int32_t range. */
-                biased_exp = (int32_t)ixe - 127;
             }
 
+            /* The compiler strength-reduces the division to modular multiplication */
             int32_t quotient = biased_exp / 3;
             int32_t rem      = biased_exp - quotient * 3;
 
@@ -158,6 +145,12 @@ ALM_PROTO_OPT(cbrtf)(float x) {
             double ans = fma(td, cs, cs);
 
             result = copysignf((float)ans, x);
+        }
+    } else {
+        /* +/-Inf, NaN */
+        if (ixm != 0 && (ixm & QNAN_MASK_32) == 0) {
+            /* sNaN: quiet the NaN and raise FE_INVALID */
+            result = __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
         }
     }
 
