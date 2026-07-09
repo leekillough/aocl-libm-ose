@@ -84,7 +84,7 @@
  * cbrt(2^k) high and low parts for k in {-2, -1, 0, 1, 2}, indexed by k+2.
  * Stored as two parallel arrays so both loads hit the same cache line and
  * the compiler can emit a single indexed load for each, with no branch.
- * rem from biased_exp % 3 is in {-2,-1,0,1,2}; index = rem + 2.
+ * rem from biased_exp % 3 is in {-2,-1,0,1,2}, so index = rem + 2.
  */
 static const double CbrtRemH[5] = {
     6.299605071544647216796875E-1,   /* cbrt(2^-2) high  0x3FE428A2F0000000  k=-2 */
@@ -110,7 +110,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
     uint64_t ixm    = MANTBITS_DP64 & ix;
     double   result = x;   /* cbrt(x) -> x if x is +/-0, +/-Inf, qNaN */
 
-    if (likely(ixe != PINFBITPATT_DP64)) {
+    if (likely(ixe != EXPBITS_DP64)) {
         /* Not +/-Inf, NaN */
         ixe >>= EXPSHIFTBITS_DP64;
         if (likely((ixe | ixm) != 0)) {

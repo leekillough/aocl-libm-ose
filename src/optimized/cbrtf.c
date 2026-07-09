@@ -30,9 +30,6 @@
  * Signature:
  *   float cbrtf(float x)
  *
- * memcpy-based bit reinterpretation helpers compile to simple register moves
- * on x86 with -O2/-O3 and avoid strict-aliasing UB.
- *
  * cbrt(x) = cbrt(m * 2^n)
  *         = cbrt(m) * 2^quotient * CbrtfRem[rem+2]
  * where m in [1,2), quotient = trunc(n/3), rem = n - 3*quotient in {-2..2}.
@@ -46,7 +43,6 @@
  */
 
 #include <stdint.h>
-#include <string.h>
 #include <libm_util_amd.h>
 #include <libm/alm_special.h>
 
@@ -57,21 +53,6 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 #include <cbrtf_data.h>
-
-/* const on by-value scalar parameters is a no-op for callers; not used here. */
-static inline uint32_t FloatToUint(float f)
-{
-    uint32_t u;
-    memcpy(&u, &f, sizeof(u));
-    return u;
-}
-
-static inline float UintToFloat(uint32_t u)
-{
-    float f;
-    memcpy(&f, &u, sizeof(f));
-    return f;
-}
 
 /*
  * cbrt(2^k) for k in {-2,-1,0,1,2}, indexed by k+2.
@@ -87,12 +68,13 @@ static const double CbrtfRem[5] = {
 
 float
 ALM_PROTO_OPT(cbrtf)(float x) {
-    uint32_t ix     = FloatToUint(x);
+    flt32_t  xdu    = { .f = x };
+    uint32_t ix     = xdu.u;
     uint32_t ixe    = EXPBITS_SP32 & ix;
     uint32_t ixm    = MANTBITS_SP32 & ix;
     float    result = x;   /* cbrtf(x) -> x if x is +/-0, +/-Inf, qNaN */
 
-    if (likely(ixe != PINFBITPATT_SP32)) {
+    if (likely(ixe != EXPBITS_SP32)) {
         /* Not +/-Inf, NaN */
         ixe >>= EXPSHIFTBITS_SP32;
         if (likely((ixe | ixm) != 0)) {
@@ -101,11 +83,12 @@ ALM_PROTO_OPT(cbrtf)(float x) {
 
             if (unlikely(ixe == 0)) {
                 /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
-                uint32_t tmp_u = FloatToUint(UintToFloat((ix & POS_BITSET_F32) | ONEEXPBITS_SP32) - 1.0f);
+                flt32_t tmp = { .u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32 };
+                tmp.f -= 1.0f;
                 /* Extracted biased exponent is in [104, 126], within int32_t range. */
-                biased_exp = (int32_t)((tmp_u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32)
+                biased_exp = (int32_t)((tmp.u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32)
                              + (EMIN_SP32 - 127);
-                ixm = tmp_u & MANTBITS_SP32;
+                ixm = tmp.u & MANTBITS_SP32;
             }
 
             /* The compiler strength-reduces the division to modular multiplication */
@@ -113,7 +96,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
             int32_t rem      = biased_exp - quotient * 3;
 
             /* Mantissa in [1, 2): set exponent field to 127. */
-            float mf = UintToFloat(ixm | ONEEXPBITS_SP32);
+            flt32_t mfdu = { .u = ixm | ONEEXPBITS_SP32 };
 
             /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
             uint32_t tidx = ixm >> 15;
@@ -125,7 +108,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
              * float->double is exact.
              */
             /* rd via FMA: product is exact internally, one rounding at the end. */
-            double rd = fma((double)mf, DoubleReciprocalTable[tidx], -1.0);
+            double rd = fma((double)mfdu.f, DoubleReciprocalTable[tidx], -1.0);
 
             /*
              * 3-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9 + 5*r^3/81.
@@ -137,8 +120,8 @@ ALM_PROTO_OPT(cbrtf)(float x) {
             double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
             td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
 
-            double scale = CbrtfRem[rem + 2] *
-                           (double)UintToFloat((uint32_t)(quotient + 127) << 23);
+            flt32_t scaledu = { .u = (uint32_t)(quotient + 127) << 23 };
+            double scale = CbrtfRem[rem + 2] * (double)scaledu.f;
 
             /* ans = (1+td)*cs = cs + td*cs; FMA avoids rounding the (1+td) sum. */
             double cs  = CubeRootTable[tidx] * scale;
