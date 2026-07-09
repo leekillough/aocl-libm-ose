@@ -137,8 +137,8 @@ ALM_PROTO_OPT(expf)(float x)
 
     uint32_t ix = asuint32(x);
 
-    if (unlikely((ix & EXPF_ABS_MASK) > PINFBITPATT_SP32 ||
-                 x > EXPF_FARG_MAX || x < EXPF_FARG_MIN)) {
+    if (unlikely(((ix & EXPF_ABS_MASK) > PINFBITPATT_SP32) ||
+                 (x > EXPF_FARG_MAX) || (x < EXPF_FARG_MIN))) {
         if ((ix & EXPF_ABS_MASK) > PINFBITPATT_SP32) {    /* NaN */
             result = __alm_handle_errorf(ix | QNAN_MASK_32,
                                          (ix & QNAN_MASK_32) ? AMD_F_NONE
