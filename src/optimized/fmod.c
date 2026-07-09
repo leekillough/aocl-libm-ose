@@ -58,7 +58,8 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-#define BIT_MASK_27_BITS 0xfffffffff8000000ULL
+#define SCALE_2_POW_52    0x1p52   /* 2^52: scale up by one 52-bit chunk */
+#define SCALE_2_POW_N52   0x1p-52  /* 2^-52: scale down by one 52-bit chunk */
 
 /* General path for subnormals or exponent difference > 52.
  * Kept out-of-line and cold so the fast path saves no XMM registers. */
@@ -66,19 +67,20 @@ NOINLINE_COLD
 static double FmodGeneral(double adx, double ady, double x)
 {
     double w = ady;
-    double t = adx * 0x1p-52;
+    double t = adx * SCALE_2_POW_N52;
     while (w <= t)
     {
-        w *= 0x1p52;
+        w *= SCALE_2_POW_52;
     }
     for (;;)
     {
         double tw = w <= ady ? ady : w;
-        uint64_t aw = asuint64(tw);
         double r = (double)(uint64_t)(adx / tw);
-        uint64_t ur = asuint64(r);
-        double hy = asdouble(aw & BIT_MASK_27_BITS);
-        double hr = asdouble(ur & BIT_MASK_27_BITS);
+        const double splitter = 134217729.0; /* 2^27 + 1: Veltkamp splitter */
+        double ctw = splitter * tw;
+        double hy = ctw - (ctw - tw);
+        double cr = splitter * r;
+        double hr = cr - (cr - r);
         double ty = tw - hy;
         double tr = r - hr;
         double cc = (((hy*hr - r*tw) + hy*tr) + ty*hr) + tr*ty;
@@ -90,7 +92,7 @@ static double FmodGeneral(double adx, double ady, double x)
         {
             break;
         }
-        w *= 0x1p-52;
+        w *= SCALE_2_POW_N52;
     }
     return copysign(adx, x);
 }

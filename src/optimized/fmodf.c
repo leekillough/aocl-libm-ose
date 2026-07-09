@@ -72,7 +72,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             if (fax > POS_INF_F32)
             {
                 /*
-                  The old Windows path that called __alm_handle_error for x
+                  The old Windows path that called __alm_handle_errorf for x
                   NaN was wrong; it unconditionally raised FE_INVALID for qNaN
                   inputs, which violates IEEE 754.
                 */
