@@ -49,25 +49,25 @@
  * because the SSE2 cvtXX2si instructions do not raise FE_INEXACT.
  */
 
-struct lrint_f64_data {
+struct LrintF64Data {
     uint64_t  in;
     long      out;
     int       excepts;
 };
 
-struct llrint_f64_data {
+struct LlrintF64Data {
     uint64_t  in;
     long long out;
     int       excepts;
 };
 
-struct lrint_f32_data {
+struct LrintF32Data {
     uint32_t  in;
     long      out;
     int       excepts;
 };
 
-struct llrint_f32_data {
+struct LlrintF32Data {
     uint32_t  in;
     long long out;
     int       excepts;
@@ -95,6 +95,7 @@ struct llrint_f32_data {
 /* 2^52  */ static const uint64_t D_2P52       = 0x4330000000000000ULL;
 /* 2^52+1: at exponent 52, 1 ULP = 1, so this is exactly 2^52+1 = 4503599627370497 */
 static const uint64_t D_2P52P1                 = 0x4330000000000001ULL;
+/* +2^63 (overflows long long) */ static const uint64_t D_2P63     = 0x43E0000000000000ULL;
 /* -2^63 = LLONG_MIN as double */ static const uint64_t D_NEG_2P63 = 0xC3E0000000000000ULL;
 /* largest double < 2^63 = 9223372036854774784 */
 static const uint64_t D_LLONG_MAX_F            = 0x43DFFFFFFFFFFFFFULL;
@@ -122,7 +123,8 @@ static const uint64_t D_LLONG_MAX_F            = 0x43DFFFFFFFFFFFFFULL;
 /* 2^23   */ static const uint32_t F_2P23      = 0x4B000000U;
 /* largest float < 2^63 = 9223371487098961920 */
 static const uint32_t F_LLONG_MAX_F            = 0x5F7FFFFFU;
-/* -2^63 exactly */ static const uint32_t F_NEG_2P63 = 0xDF000000U;
+/* +2^63 (overflows long long) */ static const uint32_t F_2P63     = 0x5F000000U;
+/* -2^63 exactly               */ static const uint32_t F_NEG_2P63 = 0xDF000000U;
 /* +Inf  */ static const uint32_t F_POS_INF    = 0x7F800000U;
 /* -Inf  */ static const uint32_t F_NEG_INF    = 0xFF800000U;
 /* +qNaN */ static const uint32_t F_QNAN       = 0x7FC00000U;
@@ -132,7 +134,7 @@ static const uint32_t F_LLONG_MAX_F            = 0x5F7FFFFFU;
  * lrint(double): results fit in long on 32-bit and 64-bit platforms.
  * Out-of-range inputs return LONG_MIN with FE_INVALID.
  */
-static const struct lrint_f64_data lrint_f64_cases[] = {
+static const struct LrintF64Data lrint_f64_cases[] = {
     /* input            out          excepts */
     { D_POS_ZERO,       0L,          0 },
     { D_NEG_ZERO,       0L,          0 },
@@ -161,7 +163,7 @@ static const struct lrint_f64_data lrint_f64_cases[] = {
  * llrint(double): test cases covering the full long long range and
  * large-magnitude inputs that overflow long on 32-bit platforms.
  */
-static const struct llrint_f64_data llrint_f64_cases[] = {
+static const struct LlrintF64Data llrint_f64_cases[] = {
     /* input               out                       excepts */
     { D_POS_ZERO,          0LL,                      0 },
     { D_NEG_ZERO,          0LL,                      0 },
@@ -182,6 +184,8 @@ static const struct llrint_f64_data llrint_f64_cases[] = {
     { D_LLONG_MAX_F,       9223372036854774784LL,     0 },
     /* -2^63 exactly = LLONG_MIN: valid, no exception */
     { D_NEG_2P63,          LLONG_MIN,                0 },
+    /* finite overflow (+2^63 > LLONG_MAX): FE_INVALID, return LLONG_MIN */
+    { D_2P63,              LLONG_MIN,                FE_INVALID },
     /* NaN and Inf: FE_INVALID, return LLONG_MIN */
     { D_QNAN,              LLONG_MIN,                FE_INVALID },
     { D_NEG_QNAN,          LLONG_MIN,                FE_INVALID },
@@ -193,7 +197,7 @@ static const struct llrint_f64_data llrint_f64_cases[] = {
 /*
  * lrintf(float): results fit in long on both 32-bit and 64-bit platforms.
  */
-static const struct lrint_f32_data lrint_f32_cases[] = {
+static const struct LrintF32Data lrint_f32_cases[] = {
     /* input            out          excepts */
     { F_POS_ZERO,       0L,          0 },
     { F_NEG_ZERO,       0L,          0 },
@@ -220,7 +224,7 @@ static const struct lrint_f32_data lrint_f32_cases[] = {
 /*
  * llrintf(float): test cases covering long long range.
  */
-static const struct llrint_f32_data llrint_f32_cases[] = {
+static const struct LlrintF32Data llrint_f32_cases[] = {
     /* input               out                       excepts */
     { F_POS_ZERO,          0LL,                      0 },
     { F_NEG_ZERO,          0LL,                      0 },
@@ -238,6 +242,8 @@ static const struct llrint_f32_data llrint_f32_cases[] = {
     { F_LLONG_MAX_F,       9223371487098961920LL,     0 },
     /* -2^63 exactly = LLONG_MIN: valid */
     { F_NEG_2P63,          LLONG_MIN,                0 },
+    /* finite overflow (+2^63 > LLONG_MAX): FE_INVALID, return LLONG_MIN */
+    { F_2P63,              LLONG_MIN,                FE_INVALID },
     /* NaN and Inf: FE_INVALID, return LLONG_MIN */
     { F_QNAN,              LLONG_MIN,                FE_INVALID },
     { F_SNAN,              LLONG_MIN,                FE_INVALID },

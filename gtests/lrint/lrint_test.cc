@@ -67,7 +67,7 @@ static inline float bits_to_float(uint32_t bits)
 TEST(lrint, f64_special_cases)
 {
     for (size_t i = 0; i < sizeof(lrint_f64_cases) / sizeof(lrint_f64_cases[0]); ++i) {
-        const struct lrint_f64_data &tc = lrint_f64_cases[i];
+        const struct LrintF64Data &tc = lrint_f64_cases[i];
         double x = bits_to_double(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);
@@ -78,9 +78,12 @@ TEST(lrint, f64_special_cases)
             << " (case " << i << ")";
 
         if (tc.excepts != 0) {
-            int raised = fetestexcept(tc.excepts);
-            EXPECT_NE(raised, 0)
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "lrint(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "lrint(" << x << "): FE_INVALID raised unexpectedly"
                 << " (case " << i << ")";
         }
     }
@@ -93,7 +96,7 @@ TEST(lrint, f64_special_cases)
 TEST(llrint, f64_special_cases)
 {
     for (size_t i = 0; i < sizeof(llrint_f64_cases) / sizeof(llrint_f64_cases[0]); ++i) {
-        const struct llrint_f64_data &tc = llrint_f64_cases[i];
+        const struct LlrintF64Data &tc = llrint_f64_cases[i];
         double x = bits_to_double(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);
@@ -104,9 +107,12 @@ TEST(llrint, f64_special_cases)
             << " (case " << i << ")";
 
         if (tc.excepts != 0) {
-            int raised = fetestexcept(tc.excepts);
-            EXPECT_NE(raised, 0)
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "llrint(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "llrint(" << x << "): FE_INVALID raised unexpectedly"
                 << " (case " << i << ")";
         }
     }
@@ -119,7 +125,7 @@ TEST(llrint, f64_special_cases)
 TEST(lrintf, f32_special_cases)
 {
     for (size_t i = 0; i < sizeof(lrint_f32_cases) / sizeof(lrint_f32_cases[0]); ++i) {
-        const struct lrint_f32_data &tc = lrint_f32_cases[i];
+        const struct LrintF32Data &tc = lrint_f32_cases[i];
         float x = bits_to_float(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);
@@ -130,9 +136,12 @@ TEST(lrintf, f32_special_cases)
             << " (case " << i << ")";
 
         if (tc.excepts != 0) {
-            int raised = fetestexcept(tc.excepts);
-            EXPECT_NE(raised, 0)
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "lrintf(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "lrintf(" << x << "): FE_INVALID raised unexpectedly"
                 << " (case " << i << ")";
         }
     }
@@ -145,7 +154,7 @@ TEST(lrintf, f32_special_cases)
 TEST(llrintf, f32_special_cases)
 {
     for (size_t i = 0; i < sizeof(llrint_f32_cases) / sizeof(llrint_f32_cases[0]); ++i) {
-        const struct llrint_f32_data &tc = llrint_f32_cases[i];
+        const struct LlrintF32Data &tc = llrint_f32_cases[i];
         float x = bits_to_float(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);
@@ -156,9 +165,12 @@ TEST(llrintf, f32_special_cases)
             << " (case " << i << ")";
 
         if (tc.excepts != 0) {
-            int raised = fetestexcept(tc.excepts);
-            EXPECT_NE(raised, 0)
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "llrintf(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "llrintf(" << x << "): FE_INVALID raised unexpectedly"
                 << " (case " << i << ")";
         }
     }
