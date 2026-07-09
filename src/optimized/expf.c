@@ -109,14 +109,9 @@ static const struct expf_data expf_v2_data = {
 #define EXPF_FARG_MIN  -0x1.9fe368p6f   /* log(2^-150) ~= -103.97 */
 #define EXPF_FARG_MAX   0x1.62e42ep6f   /* log(2^128)  ~=   88.72 */
 
-/* Bit patterns for the special-case gate and sign/infinity checks. */
+/* Bit patterns for sign/infinity checks. */
 #define EXPF_ABS_MASK       (~SIGNBIT_SP32)   /* strip sign bit */
 #define EXPF_NEG_INF_BITS   NINFBITPATT_SP32  /* -infinity */
-/* Gate at 88.0f (0x42B00000): catches all overflow (>88.72) and underflow
- * (<-103.97) inputs.  Must be <= EXPF_FARG_MAX so that every overflowing
- * input enters the gate; the previous top12f-based check effectively gated
- * at 96.0f (0x42C00000) and allowed inputs in (88.72, 96.0) to bypass. */
-#define EXPF_SPECIAL_GATE   0x42B00000u  /* 88.0f */
 
 
 /******************************************
@@ -142,7 +137,8 @@ ALM_PROTO_OPT(expf)(float x)
 
     uint32_t ix = asuint32(x);
 
-    if (unlikely((ix & EXPF_ABS_MASK) >= EXPF_SPECIAL_GATE)) {
+    if (unlikely((ix & EXPF_ABS_MASK) > PINFBITPATT_SP32 ||
+                 x > EXPF_FARG_MAX || x < EXPF_FARG_MIN)) {
         if ((ix & EXPF_ABS_MASK) > PINFBITPATT_SP32) {    /* NaN */
             result = __alm_handle_errorf(ix | QNAN_MASK_32,
                                          (ix & QNAN_MASK_32) ? AMD_F_NONE
@@ -177,13 +173,15 @@ ALM_PROTO_OPT(expf)(float x)
         dn = cast_i32_to_float(n);
 #endif
 
-        r  = fma(-dn, EXPF_LN2_BY_TBLSZ, (double_t)x);
+        r  = fma(dn, -EXPF_LN2_BY_TBLSZ, (double_t)x);
         j  = n % EXPF_TABLE_SIZE;
-        double_t qtmp  = fma(C3, r, C2);
-        double_t r2 = r * r;
-        double_t tbl = asdouble(asuint64(EXPF_TABLE[j]) + (n << (52 - EXPF_N)));
-        q  = fma(r2, qtmp, r);
-        result = (float_t)fma(tbl, q, tbl);
+        {
+            double_t qtmp  = fma(C3, r, C2);
+            double_t r2 = r * r;
+            double_t tbl = asdouble(asuint64(EXPF_TABLE[j]) + (n << (52 - EXPF_N)));
+            q  = fma(r2, qtmp, r);
+            result = (float_t)fma(tbl, q, tbl);
+        }
     }
 
     return result;
