@@ -52,11 +52,11 @@ long ALM_PROTO_REF(lrintf)(float x)
     uint32_t absbits = checkbits.u32 & POS_BITSET_F32;
 
     if ((absbits > OvfThreshold) ||
-        ((absbits == OvfThreshold) && !(checkbits.u32 & SIGNBIT_SP32))) {
+        ((absbits == OvfThreshold) && ((checkbits.u32 & SIGNBIT_SP32) == 0))) {
         /* NaN, Inf, x > LONG_MAX, or x < LONG_MIN: out of long range.
            x = -2^(N-1) (LONG_MIN) has absbits == OvfThreshold with sign set,
            so it is excluded here and handled by the else-if branch below. */
-        __alm_handle_errorf(EXPBITS_SP32 | QNAN_MASK_32, AMD_F_INVALID);
+        __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
         result = LONG_MIN;
     } else if (absbits > EXP_VAL_23_F32) {
         /* 2^23 < |x| < overflow threshold: already integral in float, cast directly. */

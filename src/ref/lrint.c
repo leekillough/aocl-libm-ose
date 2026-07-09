@@ -52,11 +52,11 @@ long ALM_PROTO_REF(lrint)(double x)
     uint64_t absbits = checkbits.u64 & POS_BITSET_DP64;
 
     if ((absbits > OvfThreshold) ||
-        ((absbits == OvfThreshold) && !(checkbits.u64 & SIGNBIT_DP64))) {
+        ((absbits == OvfThreshold) && ((checkbits.u64 & SIGNBIT_DP64) == 0))) {
         /* NaN, Inf, x > LONG_MAX, or x < LONG_MIN: out of long range.
            x = -2^(N-1) (LONG_MIN) has absbits == OvfThreshold with sign set,
            so it is excluded here and handled by the else-if branch below. */
-        __alm_handle_error(EXPBITS_DP64 | QNAN_MASK_64, AMD_F_INVALID);
+        __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
         result = LONG_MIN;
     } else if (absbits > EXP_VAL_52_DP64) {
         /* 2^52 < |x|: already integral in double, cast directly. */
