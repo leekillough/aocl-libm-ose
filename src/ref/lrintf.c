@@ -29,14 +29,20 @@
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
 #include <limits.h>
+#if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
+#include <emmintrin.h>
+#endif
 
 long ALM_PROTO_REF(lrintf)(float x)
 {
     long result = 0;
 
-#if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
-    (defined(__x86_64__) || defined(_M_X64))
-    __asm__ __volatile__("cvtss2si %1, %0" : "=r"(result) : "x"(x));
+#if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
+#if LONG_MAX > 0x7fffffffL
+    result = (long)_mm_cvtss_si64(_mm_set_ss(x));
+#else
+    result = (long)_mm_cvtss_si32(_mm_set_ss(x));
+#endif
 #else
     /* Threshold: 2^(CHAR_BIT*sizeof(long)-1), the long overflow boundary as a float bit-pattern. */
     static const uint32_t OvfThreshold =

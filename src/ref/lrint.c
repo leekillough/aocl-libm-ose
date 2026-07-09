@@ -29,31 +29,37 @@
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
 #include <limits.h>
+#if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
+#include <emmintrin.h>
+#endif
 
 long ALM_PROTO_REF(lrint)(double x)
 {
     long result = 0;
 
-#if (defined(__GNUC__) || defined(__clang__)) && defined(__SSE2__) && \
-    (defined(__x86_64__) || defined(_M_X64))
-    __asm__ __volatile__("cvtsd2si %1, %0" : "=r"(result) : "x"(x));
+#if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
+#if LONG_MAX > 0x7fffffffL
+    result = (long)_mm_cvtsd_si64(_mm_set_sd(x));
+#else
+    result = (long)_mm_cvtsd_si32(_mm_set_sd(x));
+#endif
 #else
     /* Threshold: 2^(CHAR_BIT*sizeof(long)-1), the long overflow boundary as a double bit-pattern. */
-    static const uint64_t ovf_threshold =
+    static const uint64_t OvfThreshold =
         (uint64_t)(CHAR_BIT * sizeof(long) - 1 + 1023) << 52;
 
     UT64 checkbits   = { .f64 = x };
     uint64_t absbits = checkbits.u64 & POS_BITSET_DP64;
 
-    if ((absbits > ovf_threshold) ||
-        ((absbits == ovf_threshold) && !(checkbits.u64 & SIGNBIT_DP64))) {
+    if ((absbits > OvfThreshold) ||
+        ((absbits == OvfThreshold) && !(checkbits.u64 & SIGNBIT_DP64))) {
         /* NaN, Inf, x > LONG_MAX, or x < LONG_MIN: out of long range.
-           x = -2^(N-1) (LONG_MIN) has absbits == ovf_threshold with sign set,
+           x = -2^(N-1) (LONG_MIN) has absbits == OvfThreshold with sign set,
            so it is excluded here and handled by the else-if branch below. */
         __alm_handle_error(EXPBITS_DP64 | QNAN_MASK_64, AMD_F_INVALID);
         result = LONG_MIN;
     } else if (absbits > EXP_VAL_52_DP64) {
-        /* 2^52 < |x| < overflow threshold: already integral in double, cast directly. */
+        /* 2^52 < |x|: already integral in double, cast directly. */
         result = (long)x;
     } else {
         UT64 val_2p52 = { .u64 = (checkbits.u64 & SIGNBIT_DP64) | EXP_VAL_52_DP64 };
