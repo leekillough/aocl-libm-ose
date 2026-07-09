@@ -51,13 +51,13 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     float result = 0.0f;
 
     /*Check if y in NaN. If yes, return NaN */
-    if(unlikely(fay > POS_INF_F32))
+    if (unlikely(fay > POS_INF_F32))
     {
         result = x * y;
     }
 
     /* Check if y is Zero. If yes, return NaN and raise exception*/
-    else if(unlikely(fay == 0))
+    else if (unlikely(fay == 0))
     {
         result = __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
     }
@@ -66,10 +66,10 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
         uint32_t fax = asuint32(x) & ~SIGNBIT_SP32;
 
         /* Check if x is NaN or INF */
-        if(unlikely((fax & EXPBITS_SP32) >= EXPBITS_SP32))
+        if (unlikely((fax & EXPBITS_SP32) >= EXPBITS_SP32))
         {
             /* x is NaN. Return NaN */
-            if(fax > POS_INF_F32)
+            if (fax > POS_INF_F32)
             {
                 /*
                   The old Windows path that called __alm_handle_error for x
@@ -84,7 +84,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 result = __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
             }
         }
-        else if(fax == fay)
+        else if (fax == fay)
         {
             result = copysignf(0.0f, x);
         }
@@ -96,7 +96,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             double adx = asdouble(ax);
             double ady = asdouble(ay);
 
-            if(adx < ady)
+            if (adx < ady)
             {
                 result = x;
             }
@@ -108,7 +108,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 int64_t scale = (int64_t)(FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
                 int64_t quo = 0;
 
-                if(ye < xe)
+                if (ye < xe)
                 {
                     quo = (int64_t)(xe - ye) / FMODF_CHUNK_BITS;
                     scale = (FMODF_CHUNK_BITS * quo + FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;

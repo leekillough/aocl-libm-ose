@@ -63,7 +63,7 @@
 /* General path for subnormals or exponent difference > 52.
  * Kept out-of-line and cold so the fast path saves no XMM registers. */
 NOINLINE_COLD
-static double fmod_general(double adx, double ady, double x)
+static double FmodGeneral(double adx, double ady, double x)
 {
     double w = ady;
     double t = adx * 0x1p-52;
@@ -86,7 +86,7 @@ static double fmod_general(double adx, double ady, double x)
         double v = adx - c;
         double res = (((adx - v) - c) - cc) + v;
         adx = res < 0 ? res + tw : res;
-        if(w <= ady)
+        if (w <= ady)
         {
             break;
         }
@@ -101,13 +101,13 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
     double result = 0.0;
 
     /* Check if y is NaN. If yes return NaN */
-    if(unlikely(ay > POS_INF_F64))
+    if (unlikely(ay > POS_INF_F64))
     {
         result = x * y;
     }
 
     /* Check if y is Zero. If yes, return NaN and raise exception */
-    else if(unlikely(ay == 0))
+    else if (unlikely(ay == 0))
     {
         result = __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
     }
@@ -116,10 +116,10 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         uint64_t ax = asuint64(x) & ~SIGNBIT_DP64;
 
         /* Check if x is NaN or INF */
-        if(unlikely((ax & EXPBITS_DP64) >= EXPBITS_DP64))
+        if (unlikely((ax & EXPBITS_DP64) >= EXPBITS_DP64))
         {
             /* x is NaN. Return NaN */
-            if(ax > POS_INF_F64)
+            if (ax > POS_INF_F64)
             {
                 /*
                   The old Windows path that called __alm_handle_error for x
@@ -134,7 +134,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                 result = __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
             }
         }
-        else if(ax == ay)
+        else if (ax == ay)
         {
             result = copysign(0.0, x);
         }
@@ -143,7 +143,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
             double adx = asdouble(ax);
             double ady = asdouble(ay);
 
-            if(adx < ady)
+            if (adx < ady)
             {
                 result = x;
             }
@@ -153,9 +153,9 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                 uint64_t xe = (EXPBITS_DP64 & ax) >> 52;
                 uint64_t ye = (EXPBITS_DP64 & ay) >> 52;
 
-                if(unlikely(xe == 0 || ye == 0 || (int64_t)(xe - ye) > 52))
+                if (unlikely(xe == 0 || ye == 0 || (int64_t)(xe - ye) > 52))
                 {
-                    result = fmod_general(adx, ady, x);
+                    result = FmodGeneral(adx, ady, x);
                 }
                 else
                 {
@@ -164,7 +164,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                      * then computes |x| - n*|y| with a single rounding rather than two. */
                     double r = (double)(uint64_t)(adx / ady);
                     double w = fma(-r, ady, adx);
-                    if(w < 0)
+                    if (w < 0)
                     {
                         w += ady;
                     }
