@@ -95,7 +95,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
     if (unlikely(ixe == PINFBITPATT_SP32)) {
         if (ixm == 0) {
             result = x;  /* +-Inf: return as-is, no exception */
-        } else if (ixm & QNAN_MASK_32) {
+        } else if ((ixm & QNAN_MASK_32) != 0) {
             result = x;  /* qNaN: propagate silently */
         } else {
             /* sNaN: quiet the NaN and raise FE_INVALID */
