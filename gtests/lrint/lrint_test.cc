@@ -64,7 +64,7 @@ static inline float bits_to_float(uint32_t bits)
 /* lrint(double)                                                       */
 /* ------------------------------------------------------------------ */
 
-TEST(lrint, SPECIALCASE_SCALAR_DOUBLE)
+TEST(lrint, SPECIALCASE_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(lrint_f64_cases) / sizeof(lrint_f64_cases[0]); ++i) {
         const struct LrintF64Data &tc = lrint_f64_cases[i];
@@ -93,7 +93,7 @@ TEST(lrint, SPECIALCASE_SCALAR_DOUBLE)
 /* llrint(double)                                                      */
 /* ------------------------------------------------------------------ */
 
-TEST(llrint, SPECIALCASE_SCALAR_DOUBLE)
+TEST(llrint, SPECIALCASE_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(llrint_f64_cases) / sizeof(llrint_f64_cases[0]); ++i) {
         const struct LlrintF64Data &tc = llrint_f64_cases[i];
@@ -122,7 +122,7 @@ TEST(llrint, SPECIALCASE_SCALAR_DOUBLE)
 /* lrintf(float)                                                       */
 /* ------------------------------------------------------------------ */
 
-TEST(lrintf, SPECIALCASE_SCALAR_FLOAT)
+TEST(lrintf, SPECIALCASE_FLOAT)
 {
     for (size_t i = 0; i < sizeof(lrint_f32_cases) / sizeof(lrint_f32_cases[0]); ++i) {
         const struct LrintF32Data &tc = lrint_f32_cases[i];
@@ -151,7 +151,7 @@ TEST(lrintf, SPECIALCASE_SCALAR_FLOAT)
 /* llrintf(float)                                                      */
 /* ------------------------------------------------------------------ */
 
-TEST(llrintf, SPECIALCASE_SCALAR_FLOAT)
+TEST(llrintf, SPECIALCASE_FLOAT)
 {
     for (size_t i = 0; i < sizeof(llrint_f32_cases) / sizeof(llrint_f32_cases[0]); ++i) {
         const struct LlrintF32Data &tc = llrint_f32_cases[i];
