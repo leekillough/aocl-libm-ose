@@ -76,9 +76,20 @@ static double FmodGeneral(double adx, double ady, double x)
     {
         double tw = w <= ady ? ady : w;
         double r = (double)(uint64_t)(adx / tw);
-        const double splitter = 134217729.0; /* 2^27 + 1: Veltkamp splitter */
-        double ctw = splitter * tw;
-        double hy = ctw - (ctw - tw);
+        /* Veltkamp split tw into hy + ty (each at most 27 significant bits).
+         * When tw > 2^996, splitter*tw overflows DBL_MAX: scale tw by 2^-28
+         * before splitting and scale hy back up. Scaling down by 2^-28 cannot
+         * cause underflow here because tw > 2^996 >> 2^-1046 (underflow threshold). */
+        const double splitter = 134217729.0; /* 2^27 + 1 */
+        double hy;
+        if (unlikely(tw > 0x1p996)) {
+            double tw_sc = tw * 0x1p-28;
+            double ctw = splitter * tw_sc;
+            hy = (ctw - (ctw - tw_sc)) * 0x1p28;
+        } else {
+            double ctw = splitter * tw;
+            hy = ctw - (ctw - tw);
+        }
         double cr = splitter * r;
         double hr = cr - (cr - r);
         double ty = tw - hy;
