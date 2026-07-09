@@ -121,7 +121,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
         }
     } else {
         ixe >>= EXPSHIFTBITS_DP64;
-        if (unlikely(ixe == 0) && ixm == 0) {
+        if (unlikely((ixe == 0) && (ixm == 0))) {
             result = x;  /* +-0: return as-is */
         } else {
             int64_t biased_exp = 0;
@@ -164,7 +164,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
              * inner subtraction before the outer multiply: computes
              * mant*rdu - mant*(mant_idx/512) with one final rounding.
              */
-            double idx_frac = (midx.d - 4503599627370496.0) * ONE_BY_512; /* exact: 2^-9 * integer */
+            double idx_frac = (midx.d - 0x1p52) * ONE_BY_512; /* exact: 2^-9 * integer */
             double r = fma(rdu.d, mant.d, -(idx_frac * mant.d));
 
             /*

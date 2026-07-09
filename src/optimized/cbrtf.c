@@ -106,7 +106,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
 
         int32_t biased_exp = 0;
 
-        if (unlikely(ixe == 0) && ixm == 0) {
+        if (unlikely((ixe == 0) && (ixm == 0))) {
             result = x;  /* +-0: return as-is */
         } else {
             if (unlikely(ixe == 0)) {
