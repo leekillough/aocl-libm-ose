@@ -25,7 +25,7 @@
  *
  */
 
-#include <gtest/gtest.h>
+#include <gtest.h>
 #include <fenv.h>
 #include <stdint.h>
 #include <limits.h>
