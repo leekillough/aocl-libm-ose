@@ -64,7 +64,7 @@ static inline float bits_to_float(uint32_t bits)
 /* lrint(double)                                                       */
 /* ------------------------------------------------------------------ */
 
-TEST(lrint, f64_special_cases)
+TEST(lrint, SPECIALCASE_SCALAR_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(lrint_f64_cases) / sizeof(lrint_f64_cases[0]); ++i) {
         const struct LrintF64Data &tc = lrint_f64_cases[i];
@@ -93,7 +93,7 @@ TEST(lrint, f64_special_cases)
 /* llrint(double)                                                      */
 /* ------------------------------------------------------------------ */
 
-TEST(llrint, f64_special_cases)
+TEST(llrint, SPECIALCASE_SCALAR_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(llrint_f64_cases) / sizeof(llrint_f64_cases[0]); ++i) {
         const struct LlrintF64Data &tc = llrint_f64_cases[i];
@@ -122,7 +122,7 @@ TEST(llrint, f64_special_cases)
 /* lrintf(float)                                                       */
 /* ------------------------------------------------------------------ */
 
-TEST(lrintf, f32_special_cases)
+TEST(lrintf, SPECIALCASE_SCALAR_FLOAT)
 {
     for (size_t i = 0; i < sizeof(lrint_f32_cases) / sizeof(lrint_f32_cases[0]); ++i) {
         const struct LrintF32Data &tc = lrint_f32_cases[i];
@@ -151,7 +151,7 @@ TEST(lrintf, f32_special_cases)
 /* llrintf(float)                                                      */
 /* ------------------------------------------------------------------ */
 
-TEST(llrintf, f32_special_cases)
+TEST(llrintf, SPECIALCASE_SCALAR_FLOAT)
 {
     for (size_t i = 0; i < sizeof(llrint_f32_cases) / sizeof(llrint_f32_cases[0]); ++i) {
         const struct LlrintF32Data &tc = llrint_f32_cases[i];
@@ -176,12 +176,3 @@ TEST(llrintf, f32_special_cases)
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* main                                                                */
-/* ------------------------------------------------------------------ */
-
-int main(int argc, char **argv)
-{
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
