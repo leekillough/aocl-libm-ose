@@ -30,8 +30,8 @@
  * Signature:
  *   float cbrtf(float x)
  *
- * memcpy-based bit reinterpretation helpers compile to vmovd on x86 with
- * -O2/-O3 and are portable to non-x86 targets.
+ * memcpy-based bit reinterpretation helpers compile to simple register moves
+ * on x86 with -O2/-O3 and avoid strict-aliasing UB.
  *
  * cbrt(x) = cbrt(m * 2^n)
  *         = cbrt(m) * 2^quotient * CbrtfRem[rem+2]
@@ -56,9 +56,9 @@
 #include <libm/typehelper.h>
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
-#include <libm/alm_special.h>
 #include <cbrtf_data.h>
 
+/* const on by-value scalar parameters is a no-op for callers; not used here. */
 static inline uint32_t FloatToUint(float f)
 {
     uint32_t u;

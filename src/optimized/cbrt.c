@@ -68,7 +68,6 @@
 #include <libm/typehelper.h>
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
-#include <libm/alm_special.h>
 #include <cbrt_data.h>
 
 /* ONE_BY_512 = 2^-9 exactly; all others are nearest doubles to Taylor coefficients. */
