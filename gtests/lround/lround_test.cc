@@ -26,6 +26,7 @@
  */
 
 #include <gtest.h>
+#include <fenv.h>
 #include <stdint.h>
 #include <limits.h>
 #include <cstring>
@@ -35,9 +36,6 @@
 /*
  * Forward declarations for the AOCL lround family.
  * These are declared extern "C" to match the C linkage of the library.
- *
- * Exception flags are not tested: the existing lround implementations
- * raise no FE_INVALID for NaN / Inf / overflow inputs.
  */
 extern "C" {
     long      amd_lround(double x);
@@ -66,15 +64,28 @@ static inline float bits_to_float(uint32_t bits)
 /* lround(double)                                                      */
 /* ------------------------------------------------------------------ */
 
-TEST(lround, f64_special_cases)
+TEST(lround, SPECIALCASE_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(lround_f64_cases) / sizeof(lround_f64_cases[0]); ++i) {
-        const struct lround_f64_data &tc = lround_f64_cases[i];
+        const struct LroundF64Data &tc = lround_f64_cases[i];
         double x = bits_to_double(tc.in);
+
+        feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lround(x);
-        EXPECT_EQ(result, tc.out_l)
-            << "lround(" << x << "): got " << result << ", expected " << tc.out_l
+
+        EXPECT_EQ(result, tc.out)
+            << "lround(" << x << "): got " << result << ", expected " << tc.out
             << " (case " << i << ")";
+
+        if (tc.excepts != 0) {
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
+                << "lround(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "lround(" << x << "): FE_INVALID raised unexpectedly"
+                << " (case " << i << ")";
+        }
     }
 }
 
@@ -82,15 +93,28 @@ TEST(lround, f64_special_cases)
 /* llround(double)                                                     */
 /* ------------------------------------------------------------------ */
 
-TEST(llround, f64_special_cases)
+TEST(llround, SPECIALCASE_DOUBLE)
 {
-    for (size_t i = 0; i < sizeof(lround_f64_cases) / sizeof(lround_f64_cases[0]); ++i) {
-        const struct lround_f64_data &tc = lround_f64_cases[i];
+    for (size_t i = 0; i < sizeof(llround_f64_cases) / sizeof(llround_f64_cases[0]); ++i) {
+        const struct LlroundF64Data &tc = llround_f64_cases[i];
         double x = bits_to_double(tc.in);
+
+        feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llround(x);
-        EXPECT_EQ(result, tc.out_ll)
-            << "llround(" << x << "): got " << result << ", expected " << tc.out_ll
+
+        EXPECT_EQ(result, tc.out)
+            << "llround(" << x << "): got " << result << ", expected " << tc.out
             << " (case " << i << ")";
+
+        if (tc.excepts != 0) {
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
+                << "llround(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "llround(" << x << "): FE_INVALID raised unexpectedly"
+                << " (case " << i << ")";
+        }
     }
 }
 
@@ -98,15 +122,28 @@ TEST(llround, f64_special_cases)
 /* lroundf(float)                                                      */
 /* ------------------------------------------------------------------ */
 
-TEST(lroundf, f32_special_cases)
+TEST(lroundf, SPECIALCASE_FLOAT)
 {
     for (size_t i = 0; i < sizeof(lround_f32_cases) / sizeof(lround_f32_cases[0]); ++i) {
-        const struct lround_f32_data &tc = lround_f32_cases[i];
+        const struct LroundF32Data &tc = lround_f32_cases[i];
         float x = bits_to_float(tc.in);
+
+        feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lroundf(x);
-        EXPECT_EQ(result, tc.out_l)
-            << "lroundf(" << x << "): got " << result << ", expected " << tc.out_l
+
+        EXPECT_EQ(result, tc.out)
+            << "lroundf(" << x << "): got " << result << ", expected " << tc.out
             << " (case " << i << ")";
+
+        if (tc.excepts != 0) {
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
+                << "lroundf(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "lroundf(" << x << "): FE_INVALID raised unexpectedly"
+                << " (case " << i << ")";
+        }
     }
 }
 
@@ -114,24 +151,27 @@ TEST(lroundf, f32_special_cases)
 /* llroundf(float)                                                     */
 /* ------------------------------------------------------------------ */
 
-TEST(llroundf, f32_special_cases)
+TEST(llroundf, SPECIALCASE_FLOAT)
 {
-    for (size_t i = 0; i < sizeof(lround_f32_cases) / sizeof(lround_f32_cases[0]); ++i) {
-        const struct lround_f32_data &tc = lround_f32_cases[i];
+    for (size_t i = 0; i < sizeof(llround_f32_cases) / sizeof(llround_f32_cases[0]); ++i) {
+        const struct LlroundF32Data &tc = llround_f32_cases[i];
         float x = bits_to_float(tc.in);
+
+        feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llroundf(x);
-        EXPECT_EQ(result, tc.out_ll)
-            << "llroundf(" << x << "): got " << result << ", expected " << tc.out_ll
+
+        EXPECT_EQ(result, tc.out)
+            << "llroundf(" << x << "): got " << result << ", expected " << tc.out
             << " (case " << i << ")";
+
+        if (tc.excepts != 0) {
+            EXPECT_NE(fetestexcept(FE_INVALID), 0)
+                << "llroundf(" << x << "): expected FE_INVALID but it was not raised"
+                << " (case " << i << ")";
+        } else {
+            EXPECT_EQ(fetestexcept(FE_INVALID), 0)
+                << "llroundf(" << x << "): FE_INVALID raised unexpectedly"
+                << " (case " << i << ")";
+        }
     }
-}
-
-/* ------------------------------------------------------------------ */
-/* main                                                                */
-/* ------------------------------------------------------------------ */
-
-int main(int argc, char **argv)
-{
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

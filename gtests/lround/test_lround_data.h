@@ -28,145 +28,223 @@
 #pragma once
 
 #include <stdint.h>
+#include <fenv.h>
 #include <limits.h>
 
 /*
- * Test data structs for lround/llround family.
+ * Test data for lround/llround family (round half-way cases away from zero).
  *
- * lround/llround round half-way cases away from zero (not round-to-even).
- * Exception flags are not tested because the existing lround.c reference
- * implementation raises AMD_F_NONE (no FE_INVALID) for out-of-range inputs.
+ * Two separate tables are provided for each precision, mirroring the lrint layout:
  *
- * For f64 (double input) variants:
- *   in:      double input as uint64_t bit pattern
- *   out_l:   expected long result (LONG_MIN for out-of-range / NaN / Inf)
- *   out_ll:  expected long long result (LLONG_MIN for out-of-range / NaN / Inf)
+ *   lround_f64_cases: double inputs, expected results fit in long on all
+ *     platforms (|result| <= 2^31-1), plus NaN/Inf/overflow cases where
+ *     lround returns LONG_MIN with FE_INVALID.
  *
- * For f32 (float input) variants:
- *   in:      float input as uint32_t bit pattern
- *   out_l:   expected long result
- *   out_ll:  expected long long result
+ *   llround_f64_cases: double inputs testing llround-specific ranges where
+ *     the result may exceed 32-bit long but fits in long long.
+ *
+ *   lround_f32_cases / llround_f32_cases: same split for float inputs.
+ *
+ * excepts field: expected FE_INVALID (or 0).
  */
 
-struct lround_f64_data {
+struct LroundF64Data {
     uint64_t  in;
-    long      out_l;
-    long long out_ll;
+    long      out;
+    int       excepts;
 };
 
-struct lround_f32_data {
+struct LlroundF64Data {
+    uint64_t  in;
+    long long out;
+    int       excepts;
+};
+
+struct LroundF32Data {
     uint32_t  in;
-    long      out_l;
-    long long out_ll;
+    long      out;
+    int       excepts;
 };
 
-/* Reuse the same bit-pattern constants as the lrint data header. */
-/* +0.0 */ static const uint64_t R_D_POS_ZERO  = 0x0000000000000000ULL;
-/* -0.0 */ static const uint64_t R_D_NEG_ZERO  = 0x8000000000000000ULL;
-/* +0.5 */ static const uint64_t R_D_POS_HALF  = 0x3FE0000000000000ULL;
-/* -0.5 */ static const uint64_t R_D_NEG_HALF  = 0xBFE0000000000000ULL;
-/* +1.0 */ static const uint64_t R_D_ONE       = 0x3FF0000000000000ULL;
-/* -1.0 */ static const uint64_t R_D_NEG_ONE   = 0xBFF0000000000000ULL;
-/* +1.5 */ static const uint64_t R_D_POS_1P5   = 0x3FF8000000000000ULL;
-/* -1.5 */ static const uint64_t R_D_NEG_1P5   = 0xBFF8000000000000ULL;
-/* +2.0 */ static const uint64_t R_D_TWO       = 0x4000000000000000ULL;
-/* +2.5 */ static const uint64_t R_D_POS_2P5   = 0x4004000000000000ULL;
-/* -2.5 */ static const uint64_t R_D_NEG_2P5   = 0xC004000000000000ULL;
-/* +3.0 */ static const uint64_t R_D_THREE     = 0x4008000000000000ULL;
-/* +4.5 */ static const uint64_t R_D_POS_4P5   = 0x4012000000000000ULL;
-/* -4.5 */ static const uint64_t R_D_NEG_4P5   = 0xC012000000000000ULL;
-/* 2^52  */ static const uint64_t R_D_2P52     = 0x4330000000000000ULL;
-/* -2^63 */ static const uint64_t R_D_NEG_2P63 = 0xC3E0000000000000ULL;
-/* +Inf */ static const uint64_t R_D_POS_INF   = 0x7FF0000000000000ULL;
-/* -Inf */ static const uint64_t R_D_NEG_INF   = 0xFFF0000000000000ULL;
-/* +qNaN */ static const uint64_t R_D_QNAN     = 0x7FF8000000000000ULL;
-/* sNaN */ static const uint64_t R_D_SNAN      = 0x7FF0000000000001ULL;
-
-/* Float bit patterns */
-/* +0.0f */ static const uint32_t R_F_POS_ZERO  = 0x00000000U;
-/* -0.0f */ static const uint32_t R_F_NEG_ZERO  = 0x80000000U;
-/* +0.5f */ static const uint32_t R_F_POS_HALF  = 0x3F000000U;
-/* -0.5f */ static const uint32_t R_F_NEG_HALF  = 0xBF000000U;
-/* +1.0f */ static const uint32_t R_F_ONE       = 0x3F800000U;
-/* -1.0f */ static const uint32_t R_F_NEG_ONE   = 0xBF800000U;
-/* +1.5f */ static const uint32_t R_F_POS_1P5   = 0x3FC00000U;
-/* -1.5f */ static const uint32_t R_F_NEG_1P5   = 0xBFC00000U;
-/* +2.5f */ static const uint32_t R_F_POS_2P5   = 0x40200000U;
-/* -2.5f */ static const uint32_t R_F_NEG_2P5   = 0xC0200000U;
-/* +4.5f */ static const uint32_t R_F_POS_4P5   = 0x40900000U;
-/* -4.5f */ static const uint32_t R_F_NEG_4P5   = 0xC0900000U;
-/* 2^23  */ static const uint32_t R_F_2P23      = 0x4B000000U;
-/* -2^63 */ static const uint32_t R_F_NEG_2P63  = 0xDF000000U;
-/* +Inf */ static const uint32_t R_F_POS_INF    = 0x7F800000U;
-/* -Inf */ static const uint32_t R_F_NEG_INF    = 0xFF800000U;
-/* +qNaN */ static const uint32_t R_F_QNAN      = 0x7FC00000U;
-/* sNaN */ static const uint32_t R_F_SNAN       = 0x7F800001U;
-
-/*
- * Test data for lround(double) and llround(double).
- *
- * lround/llround: half-integer rounds AWAY from zero.
- * +0.5 -> 1, -0.5 -> -1, +1.5 -> 2, -1.5 -> -2, +2.5 -> 3, -2.5 -> -3.
- */
-static const struct lround_f64_data lround_f64_cases[] = {
-    /* input               out_l        out_ll */
-    /* zeros */
-    { R_D_POS_ZERO,        0L,          0LL },
-    { R_D_NEG_ZERO,        0L,          0LL },
-    /* small exact values */
-    { R_D_ONE,             1L,          1LL },
-    { R_D_NEG_ONE,        -1L,         -1LL },
-    { R_D_TWO,             2L,          2LL },
-    { R_D_THREE,           3L,          3LL },
-    /* half-integer rounds away from zero */
-    { R_D_POS_HALF,        1L,          1LL },
-    { R_D_NEG_HALF,       -1L,         -1LL },
-    { R_D_POS_1P5,         2L,          2LL },
-    { R_D_NEG_1P5,        -2L,         -2LL },
-    { R_D_POS_2P5,         3L,          3LL },
-    { R_D_NEG_2P5,        -3L,         -3LL },
-    { R_D_POS_4P5,         5L,          5LL },
-    { R_D_NEG_4P5,        -5L,         -5LL },
-    /* large exact integral double */
-    { R_D_2P52,            (long)4503599627370496LL, 4503599627370496LL },
-    /* NaN -> implementation-defined (LONG_MIN / LLONG_MIN in this impl) */
-    { R_D_QNAN,            LONG_MIN,    LLONG_MIN },
-    { R_D_SNAN,            LONG_MIN,    LLONG_MIN },
-    /* +/-Inf -> LONG_MIN / LLONG_MIN */
-    { R_D_POS_INF,         LONG_MIN,    LLONG_MIN },
-    { R_D_NEG_INF,         LONG_MIN,    LLONG_MIN },
-    /* -2^63 is LLONG_MIN, valid for llround */
-    { R_D_NEG_2P63,        LONG_MIN,    LLONG_MIN },
+struct LlroundF32Data {
+    uint32_t  in;
+    long long out;
+    int       excepts;
 };
 
 /*
- * Test data for lroundf(float) and llroundf(float).
+ * Double bit-pattern constants.
  */
-static const struct lround_f32_data lround_f32_cases[] = {
-    /* input               out_l        out_ll */
-    /* zeros */
-    { R_F_POS_ZERO,        0L,          0LL },
-    { R_F_NEG_ZERO,        0L,          0LL },
-    /* small exact values */
-    { R_F_ONE,             1L,          1LL },
-    { R_F_NEG_ONE,        -1L,         -1LL },
-    /* half-integer rounds away from zero */
-    { R_F_POS_HALF,        1L,          1LL },
-    { R_F_NEG_HALF,       -1L,         -1LL },
-    { R_F_POS_1P5,         2L,          2LL },
-    { R_F_NEG_1P5,        -2L,         -2LL },
-    { R_F_POS_2P5,         3L,          3LL },
-    { R_F_NEG_2P5,        -3L,         -3LL },
-    { R_F_POS_4P5,         5L,          5LL },
-    { R_F_NEG_4P5,        -5L,         -5LL },
-    /* 2^23 is exactly representable as float and integral */
-    { R_F_2P23,            (long)8388608L, 8388608LL },
-    /* NaN -> LONG_MIN / LLONG_MIN */
-    { R_F_QNAN,            LONG_MIN,    LLONG_MIN },
-    { R_F_SNAN,            LONG_MIN,    LLONG_MIN },
-    /* +/-Inf -> LONG_MIN / LLONG_MIN */
-    { R_F_POS_INF,         LONG_MIN,    LLONG_MIN },
-    { R_F_NEG_INF,         LONG_MIN,    LLONG_MIN },
-    /* -2^63 is LLONG_MIN, valid for llroundf */
-    { R_F_NEG_2P63,        LONG_MIN,    LLONG_MIN },
+/* +0.0  */ static const uint64_t R_D_POS_ZERO    = 0x0000000000000000ULL;
+/* -0.0  */ static const uint64_t R_D_NEG_ZERO    = 0x8000000000000000ULL;
+/* +0.5  */ static const uint64_t R_D_POS_HALF    = 0x3FE0000000000000ULL;
+/* -0.5  */ static const uint64_t R_D_NEG_HALF    = 0xBFE0000000000000ULL;
+/* +1.0  */ static const uint64_t R_D_ONE         = 0x3FF0000000000000ULL;
+/* -1.0  */ static const uint64_t R_D_NEG_ONE     = 0xBFF0000000000000ULL;
+/* +1.5  */ static const uint64_t R_D_POS_1P5     = 0x3FF8000000000000ULL;
+/* -1.5  */ static const uint64_t R_D_NEG_1P5     = 0xBFF8000000000000ULL;
+/* +2.0  */ static const uint64_t R_D_TWO         = 0x4000000000000000ULL;
+/* +2.5  */ static const uint64_t R_D_POS_2P5     = 0x4004000000000000ULL;
+/* -2.5  */ static const uint64_t R_D_NEG_2P5     = 0xC004000000000000ULL;
+/* +3.0  */ static const uint64_t R_D_THREE       = 0x4008000000000000ULL;
+/* +4.5  */ static const uint64_t R_D_POS_4P5     = 0x4012000000000000ULL;
+/* -4.5  */ static const uint64_t R_D_NEG_4P5     = 0xC012000000000000ULL;
+/* 2^52  */ static const uint64_t R_D_2P52        = 0x4330000000000000ULL;
+/* 2^52+1: at exponent 52, 1 ULP = 1, so this is exactly 2^52+1 */
+static const uint64_t R_D_2P52P1                  = 0x4330000000000001ULL;
+/* largest double < 2^63 = 9223372036854774784 */
+static const uint64_t R_D_LLONG_MAX_F             = 0x43DFFFFFFFFFFFFFULL;
+/* +2^63 (overflows long long) */ static const uint64_t R_D_2P63     = 0x43E0000000000000ULL;
+/* -2^63 = LLONG_MIN as double */ static const uint64_t R_D_NEG_2P63 = 0xC3E0000000000000ULL;
+/* +Inf  */ static const uint64_t R_D_POS_INF     = 0x7FF0000000000000ULL;
+/* -Inf  */ static const uint64_t R_D_NEG_INF     = 0xFFF0000000000000ULL;
+/* +qNaN */ static const uint64_t R_D_QNAN        = 0x7FF8000000000000ULL;
+/* sNaN  */ static const uint64_t R_D_SNAN        = 0x7FF0000000000001ULL;
+
+/*
+ * Float bit-pattern constants.
+ */
+/* +0.0f  */ static const uint32_t R_F_POS_ZERO   = 0x00000000U;
+/* -0.0f  */ static const uint32_t R_F_NEG_ZERO   = 0x80000000U;
+/* +0.5f  */ static const uint32_t R_F_POS_HALF   = 0x3F000000U;
+/* -0.5f  */ static const uint32_t R_F_NEG_HALF   = 0xBF000000U;
+/* +1.0f  */ static const uint32_t R_F_ONE        = 0x3F800000U;
+/* -1.0f  */ static const uint32_t R_F_NEG_ONE    = 0xBF800000U;
+/* +1.5f  */ static const uint32_t R_F_POS_1P5    = 0x3FC00000U;
+/* -1.5f  */ static const uint32_t R_F_NEG_1P5    = 0xBFC00000U;
+/* +2.5f  */ static const uint32_t R_F_POS_2P5    = 0x40200000U;
+/* -2.5f  */ static const uint32_t R_F_NEG_2P5    = 0xC0200000U;
+/* +4.5f  */ static const uint32_t R_F_POS_4P5    = 0x40900000U;
+/* -4.5f  */ static const uint32_t R_F_NEG_4P5    = 0xC0900000U;
+/* 2^23   */ static const uint32_t R_F_2P23       = 0x4B000000U;
+/* largest float < 2^63 = 9223371487098961920 */
+static const uint32_t R_F_LLONG_MAX_F             = 0x5EFFFFFFU;
+/* +2^63 (overflows long long) */ static const uint32_t R_F_2P63     = 0x5F000000U;
+/* -2^63 exactly               */ static const uint32_t R_F_NEG_2P63 = 0xDF000000U;
+/* +Inf  */ static const uint32_t R_F_POS_INF     = 0x7F800000U;
+/* -Inf  */ static const uint32_t R_F_NEG_INF     = 0xFF800000U;
+/* +qNaN */ static const uint32_t R_F_QNAN        = 0x7FC00000U;
+/* sNaN  */ static const uint32_t R_F_SNAN        = 0x7F800001U;
+
+/*
+ * lround(double): results fit in long on 32-bit and 64-bit platforms.
+ * Out-of-range inputs return LONG_MIN with FE_INVALID.
+ * Half-integers round away from zero: +0.5 -> 1, -0.5 -> -1, etc.
+ */
+static const struct LroundF64Data lround_f64_cases[] = {
+    /* input             out          excepts */
+    { R_D_POS_ZERO,      0L,          0 },
+    { R_D_NEG_ZERO,      0L,          0 },
+    { R_D_ONE,           1L,          0 },
+    { R_D_NEG_ONE,      -1L,          0 },
+    { R_D_TWO,           2L,          0 },
+    { R_D_THREE,         3L,          0 },
+    /* half-integers round away from zero */
+    { R_D_POS_HALF,      1L,          0 },   /* +0.5 -> 1 */
+    { R_D_NEG_HALF,     -1L,          0 },   /* -0.5 -> -1 */
+    { R_D_POS_1P5,       2L,          0 },   /* +1.5 -> 2 */
+    { R_D_NEG_1P5,      -2L,          0 },   /* -1.5 -> -2 */
+    { R_D_POS_2P5,       3L,          0 },   /* +2.5 -> 3 */
+    { R_D_NEG_2P5,      -3L,          0 },   /* -2.5 -> -3 */
+    { R_D_POS_4P5,       5L,          0 },   /* +4.5 -> 5 */
+    { R_D_NEG_4P5,      -5L,          0 },   /* -4.5 -> -5 */
+    /* NaN and Inf: FE_INVALID, return LONG_MIN */
+    { R_D_QNAN,          LONG_MIN,    FE_INVALID },
+    { R_D_SNAN,          LONG_MIN,    FE_INVALID },
+    { R_D_POS_INF,       LONG_MIN,    FE_INVALID },
+    { R_D_NEG_INF,       LONG_MIN,    FE_INVALID },
+};
+
+/*
+ * llround(double): test cases covering the full long long range.
+ * -2^63 = LLONG_MIN is a valid input (exact integral double); no FE_INVALID.
+ * +2^63 overflows long long: FE_INVALID.
+ */
+static const struct LlroundF64Data llround_f64_cases[] = {
+    /* input               out                       excepts */
+    { R_D_POS_ZERO,        0LL,                      0 },
+    { R_D_NEG_ZERO,        0LL,                      0 },
+    { R_D_ONE,             1LL,                      0 },
+    { R_D_NEG_ONE,        -1LL,                      0 },
+    { R_D_POS_HALF,        1LL,                      0 },
+    { R_D_NEG_HALF,       -1LL,                      0 },
+    { R_D_POS_1P5,         2LL,                      0 },
+    { R_D_NEG_1P5,        -2LL,                      0 },
+    { R_D_POS_2P5,         3LL,                      0 },
+    { R_D_NEG_2P5,        -3LL,                      0 },
+    { R_D_POS_4P5,         5LL,                      0 },
+    { R_D_NEG_4P5,        -5LL,                      0 },
+    /* 2^52: exact integral double, fits in long long */
+    { R_D_2P52,            4503599627370496LL,        0 },
+    { R_D_2P52P1,          4503599627370497LL,        0 },
+    /* largest representable double below 2^63 */
+    { R_D_LLONG_MAX_F,     9223372036854774784LL,     0 },
+    /* -2^63 exactly = LLONG_MIN: valid, no exception */
+    { R_D_NEG_2P63,        LLONG_MIN,                0 },
+    /* finite overflow (+2^63 > LLONG_MAX): FE_INVALID */
+    { R_D_2P63,            LLONG_MIN,                FE_INVALID },
+    /* NaN and Inf: FE_INVALID, return LLONG_MIN */
+    { R_D_QNAN,            LLONG_MIN,                FE_INVALID },
+    { R_D_SNAN,            LLONG_MIN,                FE_INVALID },
+    { R_D_POS_INF,         LLONG_MIN,                FE_INVALID },
+    { R_D_NEG_INF,         LLONG_MIN,                FE_INVALID },
+};
+
+/*
+ * lroundf(float): results fit in long on both 32-bit and 64-bit platforms.
+ */
+static const struct LroundF32Data lround_f32_cases[] = {
+    /* input             out          excepts */
+    { R_F_POS_ZERO,      0L,          0 },
+    { R_F_NEG_ZERO,      0L,          0 },
+    { R_F_ONE,           1L,          0 },
+    { R_F_NEG_ONE,      -1L,          0 },
+    /* half-integers round away from zero */
+    { R_F_POS_HALF,      1L,          0 },
+    { R_F_NEG_HALF,     -1L,          0 },
+    { R_F_POS_1P5,       2L,          0 },
+    { R_F_NEG_1P5,      -2L,          0 },
+    { R_F_POS_2P5,       3L,          0 },
+    { R_F_NEG_2P5,      -3L,          0 },
+    { R_F_POS_4P5,       5L,          0 },
+    { R_F_NEG_4P5,      -5L,          0 },
+    /* 2^23: exact integral float, fits in long everywhere */
+    { R_F_2P23,          8388608L,    0 },
+    /* NaN and Inf: FE_INVALID, return LONG_MIN */
+    { R_F_QNAN,          LONG_MIN,    FE_INVALID },
+    { R_F_SNAN,          LONG_MIN,    FE_INVALID },
+    { R_F_POS_INF,       LONG_MIN,    FE_INVALID },
+    { R_F_NEG_INF,       LONG_MIN,    FE_INVALID },
+};
+
+/*
+ * llroundf(float): test cases covering long long range.
+ */
+static const struct LlroundF32Data llround_f32_cases[] = {
+    /* input               out                       excepts */
+    { R_F_POS_ZERO,        0LL,                      0 },
+    { R_F_NEG_ZERO,        0LL,                      0 },
+    { R_F_ONE,             1LL,                      0 },
+    { R_F_NEG_ONE,        -1LL,                      0 },
+    { R_F_POS_HALF,        1LL,                      0 },
+    { R_F_NEG_HALF,       -1LL,                      0 },
+    { R_F_POS_1P5,         2LL,                      0 },
+    { R_F_NEG_1P5,        -2LL,                      0 },
+    { R_F_POS_2P5,         3LL,                      0 },
+    { R_F_NEG_2P5,        -3LL,                      0 },
+    { R_F_POS_4P5,         5LL,                      0 },
+    { R_F_NEG_4P5,        -5LL,                      0 },
+    /* 2^23: exact integral float */
+    { R_F_2P23,            8388608LL,                0 },
+    /* largest float < 2^63 */
+    { R_F_LLONG_MAX_F,     9223371487098961920LL,    0 },
+    /* -2^63 exactly = LLONG_MIN: valid */
+    { R_F_NEG_2P63,        LLONG_MIN,               0 },
+    /* finite overflow (+2^63 > LLONG_MAX): FE_INVALID */
+    { R_F_2P63,            LLONG_MIN,               FE_INVALID },
+    /* NaN and Inf: FE_INVALID, return LLONG_MIN */
+    { R_F_QNAN,            LLONG_MIN,               FE_INVALID },
+    { R_F_SNAN,            LLONG_MIN,               FE_INVALID },
+    { R_F_POS_INF,         LLONG_MIN,               FE_INVALID },
+    { R_F_NEG_INF,         LLONG_MIN,               FE_INVALID },
 };

@@ -47,6 +47,8 @@ if e['HOST_OS'] == 'win32':
         e['PDB'] = 'test_lround.pdb'
 
 test_srcs = Glob('*.cc')
+test_srcs.append('../Gtest_srcs/gtest_accu.o')
+test_srcs.append('../Gtest_srcs/gbench_perf.o')
 
 test_exe = 'test_' + os.path.basename(os.getcwd())
 
