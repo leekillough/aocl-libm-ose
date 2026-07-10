@@ -77,58 +77,58 @@ struct LlrintF32Data {
  * Double bit-pattern constants.
  * Values fit in int32_t so they are safe as long on both 32- and 64-bit.
  */
-/* +0.0  */ static const uint64_t D_POS_ZERO   = 0x0000000000000000ULL;
-/* -0.0  */ static const uint64_t D_NEG_ZERO   = 0x8000000000000000ULL;
-/* +0.5  */ static const uint64_t D_POS_HALF   = 0x3FE0000000000000ULL;
-/* -0.5  */ static const uint64_t D_NEG_HALF   = 0xBFE0000000000000ULL;
-/* +1.0  */ static const uint64_t D_ONE        = 0x3FF0000000000000ULL;
-/* -1.0  */ static const uint64_t D_NEG_ONE    = 0xBFF0000000000000ULL;
-/* +1.5  */ static const uint64_t D_POS_1P5    = 0x3FF8000000000000ULL;
-/* -1.5  */ static const uint64_t D_NEG_1P5    = 0xBFF8000000000000ULL;
-/* +2.0  */ static const uint64_t D_TWO        = 0x4000000000000000ULL;
-/* +2.5  */ static const uint64_t D_POS_2P5    = 0x4004000000000000ULL;
-/* -2.5  */ static const uint64_t D_NEG_2P5    = 0xC004000000000000ULL;
-/* +3.0  */ static const uint64_t D_THREE      = 0x4008000000000000ULL;
-/* +4.5  */ static const uint64_t D_POS_4P5    = 0x4012000000000000ULL;
-/* -4.5  */ static const uint64_t D_NEG_4P5    = 0xC012000000000000ULL;
-/* 2^23  */ static const uint64_t D_2P23       = 0x4160000000000000ULL;
-/* 2^52  */ static const uint64_t D_2P52       = 0x4330000000000000ULL;
+#define D_POS_ZERO    0x0000000000000000ULL  /* +0.0  */
+#define D_NEG_ZERO    0x8000000000000000ULL  /* -0.0  */
+#define D_POS_HALF    0x3FE0000000000000ULL  /* +0.5  */
+#define D_NEG_HALF    0xBFE0000000000000ULL  /* -0.5  */
+#define D_ONE         0x3FF0000000000000ULL  /* +1.0  */
+#define D_NEG_ONE     0xBFF0000000000000ULL  /* -1.0  */
+#define D_POS_1P5     0x3FF8000000000000ULL  /* +1.5  */
+#define D_NEG_1P5     0xBFF8000000000000ULL  /* -1.5  */
+#define D_TWO         0x4000000000000000ULL  /* +2.0  */
+#define D_POS_2P5     0x4004000000000000ULL  /* +2.5  */
+#define D_NEG_2P5     0xC004000000000000ULL  /* -2.5  */
+#define D_THREE       0x4008000000000000ULL  /* +3.0  */
+#define D_POS_4P5     0x4012000000000000ULL  /* +4.5  */
+#define D_NEG_4P5     0xC012000000000000ULL  /* -4.5  */
+#define D_2P23        0x4160000000000000ULL  /* 2^23  */
+#define D_2P52        0x4330000000000000ULL  /* 2^52  */
 /* 2^52+1: at exponent 52, 1 ULP = 1, so this is exactly 2^52+1 = 4503599627370497 */
-static const uint64_t D_2P52P1                 = 0x4330000000000001ULL;
-/* +2^63 (overflows long long) */ static const uint64_t D_2P63     = 0x43E0000000000000ULL;
-/* -2^63 = LLONG_MIN as double */ static const uint64_t D_NEG_2P63 = 0xC3E0000000000000ULL;
+#define D_2P52P1      0x4330000000000001ULL
+#define D_2P63        0x43E0000000000000ULL  /* +2^63 (overflows long long) */
+#define D_NEG_2P63    0xC3E0000000000000ULL  /* -2^63 = LLONG_MIN as double */
 /* largest double < 2^63 = 9223372036854774784 */
-static const uint64_t D_LLONG_MAX_F            = 0x43DFFFFFFFFFFFFFULL;
-/* +Inf  */ static const uint64_t D_POS_INF    = 0x7FF0000000000000ULL;
-/* -Inf  */ static const uint64_t D_NEG_INF    = 0xFFF0000000000000ULL;
-/* +qNaN */ static const uint64_t D_QNAN       = 0x7FF8000000000000ULL;
-/* -qNaN */ static const uint64_t D_NEG_QNAN   = 0xFFF8000000000000ULL;
-/* sNaN  */ static const uint64_t D_SNAN       = 0x7FF0000000000001ULL;
+#define D_LLONG_MAX_F 0x43DFFFFFFFFFFFFFULL
+#define D_POS_INF     0x7FF0000000000000ULL  /* +Inf  */
+#define D_NEG_INF     0xFFF0000000000000ULL  /* -Inf  */
+#define D_QNAN        0x7FF8000000000000ULL  /* +qNaN */
+#define D_NEG_QNAN    0xFFF8000000000000ULL  /* -qNaN */
+#define D_SNAN        0x7FF0000000000001ULL  /* sNaN  */
 
 /*
  * Float bit-pattern constants.
  */
-/* +0.0f  */ static const uint32_t F_POS_ZERO  = 0x00000000U;
-/* -0.0f  */ static const uint32_t F_NEG_ZERO  = 0x80000000U;
-/* +0.5f  */ static const uint32_t F_POS_HALF  = 0x3F000000U;
-/* -0.5f  */ static const uint32_t F_NEG_HALF  = 0xBF000000U;
-/* +1.0f  */ static const uint32_t F_ONE       = 0x3F800000U;
-/* -1.0f  */ static const uint32_t F_NEG_ONE   = 0xBF800000U;
-/* +1.5f  */ static const uint32_t F_POS_1P5   = 0x3FC00000U;
-/* -1.5f  */ static const uint32_t F_NEG_1P5   = 0xBFC00000U;
-/* +2.5f  */ static const uint32_t F_POS_2P5   = 0x40200000U;
-/* -2.5f  */ static const uint32_t F_NEG_2P5   = 0xC0200000U;
-/* +4.5f  */ static const uint32_t F_POS_4P5   = 0x40900000U;
-/* -4.5f  */ static const uint32_t F_NEG_4P5   = 0xC0900000U;
-/* 2^23   */ static const uint32_t F_2P23      = 0x4B000000U;
+#define F_POS_ZERO    0x00000000U  /* +0.0f  */
+#define F_NEG_ZERO    0x80000000U  /* -0.0f  */
+#define F_POS_HALF    0x3F000000U  /* +0.5f  */
+#define F_NEG_HALF    0xBF000000U  /* -0.5f  */
+#define F_ONE         0x3F800000U  /* +1.0f  */
+#define F_NEG_ONE     0xBF800000U  /* -1.0f  */
+#define F_POS_1P5     0x3FC00000U  /* +1.5f  */
+#define F_NEG_1P5     0xBFC00000U  /* -1.5f  */
+#define F_POS_2P5     0x40200000U  /* +2.5f  */
+#define F_NEG_2P5     0xC0200000U  /* -2.5f  */
+#define F_POS_4P5     0x40900000U  /* +4.5f  */
+#define F_NEG_4P5     0xC0900000U  /* -4.5f  */
+#define F_2P23        0x4B000000U  /* 2^23   */
 /* largest float < 2^63 = 9223371487098961920 */
-static const uint32_t F_LLONG_MAX_F            = 0x5EFFFFFFU;
-/* +2^63 (overflows long long) */ static const uint32_t F_2P63     = 0x5F000000U;
-/* -2^63 exactly               */ static const uint32_t F_NEG_2P63 = 0xDF000000U;
-/* +Inf  */ static const uint32_t F_POS_INF    = 0x7F800000U;
-/* -Inf  */ static const uint32_t F_NEG_INF    = 0xFF800000U;
-/* +qNaN */ static const uint32_t F_QNAN       = 0x7FC00000U;
-/* sNaN  */ static const uint32_t F_SNAN       = 0x7F800001U;
+#define F_LLONG_MAX_F 0x5EFFFFFFU
+#define F_2P63        0x5F000000U  /* +2^63 (overflows long long) */
+#define F_NEG_2P63    0xDF000000U  /* -2^63 exactly               */
+#define F_POS_INF     0x7F800000U  /* +Inf  */
+#define F_NEG_INF     0xFF800000U  /* -Inf  */
+#define F_QNAN        0x7FC00000U  /* +qNaN */
+#define F_SNAN        0x7F800001U  /* sNaN  */
 
 /*
  * lrint(double): results fit in long on 32-bit and 64-bit platforms.
