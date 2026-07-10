@@ -229,7 +229,7 @@ if(LIBABI STREQUAL "aocl")
         # we must also link alm_utils_static explicitly.
         if(${${PROJECT_PREFIX}_LIBM_ENABLE_ASAN} OR ${${PROJECT_PREFIX}_LIBM_ENABLE_COVERAGE})
             set(LIBALM "${CMAKE_BINARY_DIR}/src/libalm.a")
-            set(ALM_UTILS "${CMAKE_BINARY_DIR}/utils/libalm_utils.a")
+            set(ALM_UTILS "${CMAKE_BINARY_DIR}/lib/libalm_utils.a")
             list(APPEND LIBS ${LIBALM} ${ALM_UTILS})
         else()
             set(LIBALM "alm")
@@ -293,7 +293,7 @@ set(tests "")
 
 # Define test directories with their linking requirements
 set(SPECIAL_TEST_DIRS "powx" "linearfrac" "sincos")
-set(VR_TEST_DIRS "acosh" "asinh" "atan2" "atanh" "cexp" "sinh" "ceil" "copysign" "fdim" "floor" "fmod" "hypot" "logb" "remainder" "rint" "trunc" "nearbyint")
+set(VR_TEST_DIRS "acosh" "asinh" "atan2" "atanh" "cexp" "clog" "sinh" "ceil" "copysign" "fdim" "floor" "fmod" "hypot" "logb" "remainder" "rint" "trunc" "nearbyint")
 set(VRA_TEST_DIRS "exp" "cos" "acos" "add" "asin" "atan" "cosh" "sin" "tan" "tanh" "cbrt" "erf" "erfinv" "erfc" "erfcinv" "cdfnorm" "cdfnorminv" "exp10" "exp2" "expm1" "fabs" "fmax" "fmin" "ldexp" "log" "log10" "log1p" "log2" "mul" "nextafter" "pow" "round" "sqrt" "sub")
 
 # Combine all test directories
