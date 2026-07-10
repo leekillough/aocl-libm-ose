@@ -59,9 +59,9 @@ test_asinhf_conformance_data[] = {
    {0x7F800001, 0x7fc00001,  FE_INVALID},  // snan min
    {0x7Fa0bd90, 0x7fe0bd90,  FE_INVALID},  // snan intermediate
    {0x7FBFFFFF, 0x7fffffff,  FE_INVALID},  // snan max
-   {0xFF800001, 0xffc00000,  FE_INVALID},  // -snan min
-   {0xfF95fffa, 0xffc00000,  FE_INVALID},  // -snan intermediate
-   {0xFFBFFFFF, 0xffc00000,  FE_INVALID},  // -snan max
+   {0xFF800001, 0xffc00001,  FE_INVALID},  // -snan min
+   {0xFF95FFFA, 0xffd5fffa,  FE_INVALID},  // -snan intermediate
+   {0xFFBFFFFF, 0xffffffff,  FE_INVALID},  // -snan max
    {0x3FC90FDB, 0x3f9de027,  0},  // pi/2
    {0x40490FDB, 0x3fee5fb5,  0},  // pi
    {0x40C90FDB, 0x40226315,  0},  // 2pi
