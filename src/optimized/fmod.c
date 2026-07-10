@@ -157,10 +157,10 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
 
             if (adx >= ady)
             {
-                uint64_t xe = ax >> ALM_F64_EXPO_SHIFT;
-                uint64_t ye = ay >> ALM_F64_EXPO_SHIFT;
+                uint64_t xe = ax >> EXPSHIFTBITS_DP64;
+                uint64_t ye = ay >> EXPSHIFTBITS_DP64;
 
-                if (unlikely((xe == 0) || (ye == 0) || (xe > ye + ALM_F64_MANT_SIZE)))
+                if (unlikely((xe == 0) || (ye == 0) || (xe > ye + EXPSHIFTBITS_DP64)))
                 {
                     adx = FmodGeneral(adx, ady);
                 }

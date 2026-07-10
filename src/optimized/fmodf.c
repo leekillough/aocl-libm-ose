@@ -36,11 +36,7 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-/* 24llu << 52: unbiased double exponent of 2^24 */
-#define FMODF_CHUNK_EXP 0x180000000000000
-
-/* Scale step: multiply by 2^-24 to shrink w by one chunk per iteration. */
-#define FMODF_CHUNK_DOWN 0x1p-24
+#define FMODF_CHUNK_EXP 0x180000000000000u  /* 24 * 2^52 */
 
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
@@ -88,40 +84,24 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
         {
             uint64_t ax = asuint64((double) x) & POS_BITSET_DP64;
             uint64_t ay = asuint64((double) y) & POS_BITSET_DP64;
-
-            double adx = asdouble(ax);
-            double ady = asdouble(ay);
-
-            if (adx >= ady)
+            if (ax >= ay)
             {
-                uint64_t xe = ax >> ALM_F32_EXPO_SHIFT;
-                uint64_t ye = ay >> ALM_F32_EXPO_SHIFT;
-
-                /* quo = max(floor(log2( |x|/|y| ) / 24), 0) */
-                uint64_t quo = (xe >= ye + MANTLENGTH_SP32) ? (xe - ye) / MANTLENGTH_SP32 : 0;
-
-                /* Multiply |y| by 2^(24*quo) so that |x|/|y| < 2^24 */
-                ady *= asdouble(quo * FMODF_CHUNK_EXP + ONEEXPBITS_DP64);
-                for (;;)
+                /* quo = floor(log2( |x|/|y| ) / 24 ) */
+                uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
+                double   adx = asdouble(ax);
+                do
                 {
+                    /* |y| * 2^(24*quo) */
+                    double ady = asdouble(quo * FMODF_CHUNK_EXP + ay);
+
                     /* Subtract floor( |x|/|y| ) * |y| from |x| */
                     adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
 
+                    /* Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady */
                     if (adx < 0)
-                    {
-                        /* Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady */
                         adx += ady;
-                    }
-
-                    /* If quo == 0, |x| has been fully reduced by original |y| */
-                    if (quo == 0) {
-                        break;
-                    }
-
-                    /* Divide |y| by 2^24 */
-                    ady *= FMODF_CHUNK_DOWN;
-                    --quo;
                 }
+                while (unlikely(quo-- != 0));
 
                 /* Convert reduced |x| to float and copy original x sign */
                 result = copysignf((float) adx, x);
