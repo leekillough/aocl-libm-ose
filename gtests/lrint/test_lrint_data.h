@@ -37,7 +37,7 @@
  * Two separate tables are provided:
  *
  *   lrint_f64_cases: double inputs, expected results fit in long on all
- *     platforms (|result| <= 2^31-1), plus NaN/Inf/overflow cases where
+ *     platforms (|result| <= 2^31-1), plus NaN and Inf cases where
  *     both lrint and llrint return LONG_MIN / LLONG_MIN with FE_INVALID.
  *
  *   llrint_f64_cases: double inputs testing llrint-specific ranges where

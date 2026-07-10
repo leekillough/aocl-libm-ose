@@ -63,7 +63,14 @@ long ALM_PROTO_REF(lrint)(double x)
         result = (long)x;
     } else {
         UT64 val_2p52 = { .u64 = (checkbits.u64 & SIGNBIT_DP64) | EXP_VAL_52_DP64 };
-        result = (long)((x + val_2p52.f64) - val_2p52.f64);
+        double rx = (x + val_2p52.f64) - val_2p52.f64;
+        /* On 32-bit long, rounding can produce 2^31 = LONG_MAX+1; catch it. */
+        if (unlikely(rx > (double)LONG_MAX)) {
+            __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
+            result = LONG_MIN;
+        } else {
+            result = (long)rx;
+        }
     }
 #endif
 

@@ -25,7 +25,7 @@
  *
  */
 
-#include <gtest.h>
+#include "gtest.h"
 #include <fenv.h>
 #include <stdint.h>
 #include <limits.h>
@@ -87,6 +87,24 @@ TEST(lrint, SPECIALCASE_DOUBLE)
                 << " (case " << i << ")";
         }
     }
+
+#if LONG_MAX == 0x7fffffffL
+    /* On 32-bit long, LONG_MAX + 0.5 = 2147483647.5 rounds to 2^31 in
+       FE_TONEAREST (nearest-even; 2^31 is even), which overflows long.
+       The correct result is LONG_MIN with FE_INVALID raised. */
+    {
+        int saved_round = fegetround();
+        fesetround(FE_TONEAREST);
+        feclearexcept(FE_ALL_EXCEPT);
+        double x = (double)LONG_MAX + 0.5;
+        long result = amd_lrint(x);
+        fesetround(saved_round);
+        EXPECT_EQ(result, LONG_MIN)
+            << "lrint(LONG_MAX + 0.5) with FE_TONEAREST: expected LONG_MIN";
+        EXPECT_NE(fetestexcept(FE_INVALID), 0)
+            << "lrint(LONG_MAX + 0.5) with FE_TONEAREST: expected FE_INVALID";
+    }
+#endif
 }
 
 /* ------------------------------------------------------------------ */
