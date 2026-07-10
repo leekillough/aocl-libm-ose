@@ -36,37 +36,33 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-/* Reduction chunk size: 2^24 steps per iteration, matching float mantissa width. */
-#define FMODF_CHUNK_BITS    24
+/* 24llu << 52: unbiased double exponent of 2^24 */
+#define FMODF_CHUNK_EXP 0x180000000000000
+
 /* Scale step: multiply by 2^-24 to shrink w by one chunk per iteration. */
-#define FMODF_CHUNK_DOWN    0x1p-24
-/* IEEE 754 double bias, used when constructing the initial scale exponent. */
-#define FMODF_DOUBLE_BIAS   1023
-/* Double mantissa width in bits, used when packing the scale exponent. */
-#define FMODF_MANTISSA_BITS 52
+#define FMODF_CHUNK_DOWN 0x1p-24
 
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
     uint32_t fay = asuint32(y) & ~SIGNBIT_SP32;
-    float result = 0.0f;
+    float result = x;
 
-    /*Check if y in NaN. If yes, return NaN */
+    /* Check if y is NaN. If yes, return NaN */
     if (unlikely(fay > POS_INF_F32))
     {
         result = x * y;
     }
-
     /* Check if y is Zero. If yes, return NaN and raise exception*/
     else if (unlikely(fay == 0))
     {
-        result = __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
+        result = __alm_handle_errorf(QNANBITPATT_SP32, AMD_F_INVALID);
     }
     else
     {
         uint32_t fax = asuint32(x) & ~SIGNBIT_SP32;
 
         /* Check if x is NaN or INF */
-        if (unlikely((fax & EXPBITS_SP32) >= EXPBITS_SP32))
+        if (unlikely((~fax & EXPBITS_SP32) == 0))
         {
             /* x is NaN. Return NaN */
             if (fax > POS_INF_F32)
@@ -96,34 +92,39 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             double adx = asdouble(ax);
             double ady = asdouble(ay);
 
-            if (adx < ady)
+            if (adx >= ady)
             {
-                result = x;
-            }
-            else
-            {
-                uint64_t xe = (EXPBITS_DP64 & ax) >> FMODF_MANTISSA_BITS;
-                uint64_t ye = (EXPBITS_DP64 & ay) >> FMODF_MANTISSA_BITS;
+                uint64_t xe = ax >> ALM_F32_EXPO_SHIFT;
+                uint64_t ye = ay >> ALM_F32_EXPO_SHIFT;
 
-                int64_t scale = (int64_t)(FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
-                int64_t quo = 0;
+                /* quo = max(floor(log2( |x|/|y| ) / 24), 0) */
+                uint64_t quo = (xe >= ye + MANTLENGTH_SP32) ? (xe - ye) / MANTLENGTH_SP32 : 0;
 
-                if (ye < xe)
+                /* Multiply |y| by 2^(24*quo) so that |x|/|y| < 2^24 */
+                ady *= asdouble(quo * FMODF_CHUNK_EXP + ONEEXPBITS_DP64);
+                for (;;)
                 {
-                    quo = (int64_t)(xe - ye) / FMODF_CHUNK_BITS;
-                    scale = (FMODF_CHUNK_BITS * quo + FMODF_DOUBLE_BIAS) << FMODF_MANTISSA_BITS;
+                    /* Subtract floor( |x|/|y| ) * |y| from |x| */
+                    adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
+
+                    if (adx < 0)
+                    {
+                        /* Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady */
+                        adx += ady;
+                    }
+
+                    /* If quo == 0, |x| has been fully reduced by original |y| */
+                    if (quo == 0) {
+                        break;
+                    }
+
+                    /* Divide |y| by 2^24 */
+                    ady *= FMODF_CHUNK_DOWN;
+                    --quo;
                 }
 
-                double w = asdouble((uint64_t)scale) * ady;
-                while (quo > 0)
-                {
-                    quo--;
-                    adx -= (double)(uint64_t)(adx / w) * w;
-                    w *= FMODF_CHUNK_DOWN;
-                }
-
-                adx -= (double)(uint64_t)(adx / w) * w;
-                result = copysignf((float)adx, x);
+                /* Convert reduced |x| to float and copy original x sign */
+                result = copysignf((float) adx, x);
             }
         }
     }
