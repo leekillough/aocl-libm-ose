@@ -77,9 +77,10 @@ static double FmodGeneral(double adx, double ady)
         double tw = w <= ady ? ady : w;
         double r = (double)(uint64_t)(adx / tw);
         /* Veltkamp split tw into hy + ty (each at most 27 significant bits).
-         * When tw > 2^996, splitter*tw overflows DBL_MAX: scale tw by 2^-28
-         * before splitting and scale hy back up. Scaling down by 2^-28 cannot
-         * cause underflow here because tw > 2^996 >> 2^-1046 (underflow threshold). */
+         * splitter*tw can overflow for very large tw (around 2^997), so we
+         * conservatively scale tw by 2^-28 before splitting and scale hy back
+         * up. Scaling down by 2^-28 cannot underflow here because tw is
+         * extremely large. */
         const double splitter = 134217729.0; /* 2^27 + 1 */
         double hy;
         if (unlikely(tw > 0x1p996)) {
@@ -160,7 +161,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                 uint64_t xe = ax >> EXPSHIFTBITS_DP64;
                 uint64_t ye = ay >> EXPSHIFTBITS_DP64;
 
-                if (unlikely((xe == 0) || (ye == 0) || (xe > ye + EXPSHIFTBITS_DP64)))
+                if (unlikely((xe == 0) || (ye == 0) || (xe > (ye + EXPSHIFTBITS_DP64))))
                 {
                     adx = FmodGeneral(adx, ady);
                 }
