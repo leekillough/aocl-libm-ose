@@ -131,7 +131,7 @@ ALM_PROTO_OPT(cbrtf)(float x) {
         }
     } else {
         /* +/-Inf, NaN */
-        if (ixm != 0 && (ixm & QNAN_MASK_32) == 0) {
+        if ((ixm != 0) && ((ixm & QNAN_MASK_32) == 0)) {
             /* sNaN: quiet the NaN and raise FE_INVALID */
             result = __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
         }
