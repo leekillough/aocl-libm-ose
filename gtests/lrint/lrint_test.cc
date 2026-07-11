@@ -66,8 +66,8 @@ static inline float bits_to_float(uint32_t bits)
 
 TEST(lrint, SPECIALCASE_DOUBLE)
 {
-    for (size_t i = 0; i < sizeof(lrint_f64_cases) / sizeof(lrint_f64_cases[0]); ++i) {
-        const struct LrintF64Data &tc = lrint_f64_cases[i];
+    for (size_t i = 0; i < sizeof(LrintF64Cases) / sizeof(LrintF64Cases[0]); ++i) {
+        const struct LrintF64Data &tc = LrintF64Cases[i];
         double x = bits_to_double(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);
@@ -113,8 +113,8 @@ TEST(lrint, SPECIALCASE_DOUBLE)
 
 TEST(llrint, SPECIALCASE_DOUBLE)
 {
-    for (size_t i = 0; i < sizeof(llrint_f64_cases) / sizeof(llrint_f64_cases[0]); ++i) {
-        const struct LlrintF64Data &tc = llrint_f64_cases[i];
+    for (size_t i = 0; i < sizeof(LlrintF64Cases) / sizeof(LlrintF64Cases[0]); ++i) {
+        const struct LlrintF64Data &tc = LlrintF64Cases[i];
         double x = bits_to_double(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);
@@ -142,8 +142,8 @@ TEST(llrint, SPECIALCASE_DOUBLE)
 
 TEST(lrintf, SPECIALCASE_FLOAT)
 {
-    for (size_t i = 0; i < sizeof(lrint_f32_cases) / sizeof(lrint_f32_cases[0]); ++i) {
-        const struct LrintF32Data &tc = lrint_f32_cases[i];
+    for (size_t i = 0; i < sizeof(LrintF32Cases) / sizeof(LrintF32Cases[0]); ++i) {
+        const struct LrintF32Data &tc = LrintF32Cases[i];
         float x = bits_to_float(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);
@@ -171,8 +171,8 @@ TEST(lrintf, SPECIALCASE_FLOAT)
 
 TEST(llrintf, SPECIALCASE_FLOAT)
 {
-    for (size_t i = 0; i < sizeof(llrint_f32_cases) / sizeof(llrint_f32_cases[0]); ++i) {
-        const struct LlrintF32Data &tc = llrint_f32_cases[i];
+    for (size_t i = 0; i < sizeof(LlrintF32Cases) / sizeof(LlrintF32Cases[0]); ++i) {
+        const struct LlrintF32Data &tc = LlrintF32Cases[i];
         float x = bits_to_float(tc.in);
 
         feclearexcept(FE_ALL_EXCEPT);

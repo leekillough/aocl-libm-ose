@@ -36,14 +36,14 @@
  *
  * Two separate tables are provided:
  *
- *   lrint_f64_cases: double inputs, expected results fit in long on all
+ *   LrintF64Cases: double inputs, expected results fit in long on all
  *     platforms (|result| <= 2^31-1), plus NaN and Inf cases where
  *     both lrint and llrint return LONG_MIN / LLONG_MIN with FE_INVALID.
  *
- *   llrint_f64_cases: double inputs testing llrint-specific ranges where
+ *   LlrintF64Cases: double inputs testing llrint-specific ranges where
  *     the result fits in long long but may not fit in long (32-bit long).
  *
- *   lrint_f32_cases / llrint_f32_cases: same split for float inputs.
+ *   LrintF32Cases / LlrintF32Cases: same split for float inputs.
  *
  * excepts field: expected FE_INVALID (or 0).  FE_INEXACT is NOT checked
  * because the SSE2 cvtXX2si instructions do not raise FE_INEXACT.
@@ -134,7 +134,7 @@ struct LlrintF32Data {
  * lrint(double): results fit in long on 32-bit and 64-bit platforms.
  * Out-of-range inputs return LONG_MIN with FE_INVALID.
  */
-static const struct LrintF64Data lrint_f64_cases[] = {
+static const struct LrintF64Data LrintF64Cases[] = {
     /* input            out          excepts */
     { D_POS_ZERO,       0L,          0 },
     { D_NEG_ZERO,       0L,          0 },
@@ -163,7 +163,7 @@ static const struct LrintF64Data lrint_f64_cases[] = {
  * llrint(double): test cases covering the full long long range and
  * large-magnitude inputs that overflow long on 32-bit platforms.
  */
-static const struct LlrintF64Data llrint_f64_cases[] = {
+static const struct LlrintF64Data LlrintF64Cases[] = {
     /* input               out                       excepts */
     { D_POS_ZERO,          0LL,                      0 },
     { D_NEG_ZERO,          0LL,                      0 },
@@ -197,7 +197,7 @@ static const struct LlrintF64Data llrint_f64_cases[] = {
 /*
  * lrintf(float): results fit in long on both 32-bit and 64-bit platforms.
  */
-static const struct LrintF32Data lrint_f32_cases[] = {
+static const struct LrintF32Data LrintF32Cases[] = {
     /* input            out          excepts */
     { F_POS_ZERO,       0L,          0 },
     { F_NEG_ZERO,       0L,          0 },
@@ -224,7 +224,7 @@ static const struct LrintF32Data lrint_f32_cases[] = {
 /*
  * llrintf(float): test cases covering long long range.
  */
-static const struct LlrintF32Data llrint_f32_cases[] = {
+static const struct LlrintF32Data LlrintF32Cases[] = {
     /* input               out                       excepts */
     { F_POS_ZERO,          0LL,                      0 },
     { F_NEG_ZERO,          0LL,                      0 },
