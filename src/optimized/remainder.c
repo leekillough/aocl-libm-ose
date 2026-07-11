@@ -168,10 +168,11 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
                 double n_d = RneD(adx / ady);
                 double r   = fma(-n_d, ady, adx);
 
-                if (unlikely(r > half_ady))
+                if (unlikely(r > half_ady)) {
                     r -= ady;
-                else if (unlikely(r < -half_ady || (r + r == -ady && (int64_t)n_d & 1)))
+                } else if (unlikely(r < -half_ady || (r + r == -ady && (int64_t)n_d & 1))) {
                     r += ady;
+                }
 
                 result = (r == 0.0) ? copysign(0.0, x)
                        : (ix & UINT64_C(0x8000000000000000)) ? -r : r;
@@ -195,10 +196,11 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
                 double half_ady = ady * 0x1p-1;
                 double n = RneD(adx / w);
                 adx = fma(-n, w, adx);
-                if (unlikely(adx > half_ady))
+                if (unlikely(adx > half_ady)) {
                     adx -= ady;
-                else if (unlikely(adx < -half_ady || (adx + adx == -ady && (int64_t)n & 1)))
+                } else if (unlikely(adx < -half_ady || (adx + adx == -ady && (int64_t)n & 1))) {
                     adx += ady;
+                }
 
                 result = (adx == 0.0) ? copysign(0.0, x)
                        : (ix & UINT64_C(0x8000000000000000)) ? -adx : adx;
