@@ -203,16 +203,13 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
                 int32_t d    = xe_d - ye_d;
 
                 if (likely(d <= EXPSHIFTBITS_DP64)) {
+                    double half_ady = ady * 0x1p-1;
                     double n_d = RneD(adx / ady);
                     double r = fma(-n_d, ady, adx);
-                    if (unlikely(r >= ady)) {
+                    if (unlikely(r > half_ady)) {
                         r -= ady;
-                    } else if (unlikely(r < -ady)) {
-                        r += ady;
-                    // Fallback tie correction: trunc(q+0.5) gives n_d = N+1 (odd) for an
-                    // even-floor half-integer tie; RneD gives n_d = N (even).  Correct
-                    // the fallback case; harmless in the SSE4.1 path (n_d is already even).
-                    } else if (unlikely(r + r == -ady && (int64_t)n_d & 1)) {
+                    } else if (unlikely(r < -half_ady ||
+                                        (r + r == -ady && (int64_t)n_d & 1))) {
                         r += ady;
                     }
                     adx = r;
@@ -226,13 +223,13 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
                         adx -= (double)q * w;
                         w *= 0x1p-24;  // 2^-24
                     }
+                    double half_ady = ady * 0x1p-1;
                     double n = RneD(adx / w);
                     adx = fma(-n, w, adx);
-                    if (unlikely(adx >= ady)) {
+                    if (unlikely(adx > half_ady)) {
                         adx -= ady;
-                    } else if (unlikely(adx < -ady)) {
-                        adx += ady;
-                    } else if (unlikely(adx + adx == -ady && (int64_t)n & 1)) {
+                    } else if (unlikely(adx < -half_ady ||
+                                        (adx + adx == -ady && (int64_t)n & 1))) {
                         adx += ady;
                     }
                 }
