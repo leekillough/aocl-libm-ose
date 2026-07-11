@@ -25,7 +25,7 @@
  *
  */
 
-#include <gtest.h>
+#include "gtest.h"
 #include <fenv.h>
 #include <stdint.h>
 #include <limits.h>
@@ -68,16 +68,16 @@ TEST(lround, SPECIALCASE_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(LroundF64Cases) / sizeof(LroundF64Cases[0]); ++i) {
         const struct LroundF64Data &tc = LroundF64Cases[i];
-        double x = bits_to_double(tc.in);
+        double x = bits_to_double(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lround(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "lround(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "lround(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "lround(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";
@@ -97,16 +97,16 @@ TEST(llround, SPECIALCASE_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(LlroundF64Cases) / sizeof(LlroundF64Cases[0]); ++i) {
         const struct LlroundF64Data &tc = LlroundF64Cases[i];
-        double x = bits_to_double(tc.in);
+        double x = bits_to_double(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llround(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "llround(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "llround(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "llround(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";
@@ -126,16 +126,16 @@ TEST(lroundf, SPECIALCASE_FLOAT)
 {
     for (size_t i = 0; i < sizeof(LroundF32Cases) / sizeof(LroundF32Cases[0]); ++i) {
         const struct LroundF32Data &tc = LroundF32Cases[i];
-        float x = bits_to_float(tc.in);
+        float x = bits_to_float(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lroundf(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "lroundf(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "lroundf(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "lroundf(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";
@@ -155,16 +155,16 @@ TEST(llroundf, SPECIALCASE_FLOAT)
 {
     for (size_t i = 0; i < sizeof(LlroundF32Cases) / sizeof(LlroundF32Cases[0]); ++i) {
         const struct LlroundF32Data &tc = LlroundF32Cases[i];
-        float x = bits_to_float(tc.in);
+        float x = bits_to_float(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llroundf(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "llroundf(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "llroundf(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "llroundf(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";

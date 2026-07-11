@@ -51,23 +51,24 @@
 #define LLROUND_INT_BITS   0x4330000000000000ULL
 
 /* long long is in the definition of the llround API, and is not chosen for its size */
-long long ALM_PROTO_REF(llround)(double x)
+long long ALM_PROTO_REF(llround)(const double x)
 {
-    UT64 u = { .f64 = x };
-
     long long result = 0;
 
     if (unlikely(!LLROUND_INRANGE(x))) {
         /* NaN, Inf, or x outside [-2^63, 2^63): out of long long range. */
         __alm_handle_error(EXPBITS_DP64 | QNAN_MASK_64, AMD_F_INVALID);
         result = LLONG_MIN;
-    } else if (unlikely((u.u64 & POS_BITSET_DP64) >= LLROUND_INT_BITS)) {
-        /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
-           halfway case that rounds to even, yielding a wrong result. */
-        result = (long long)x;
     } else {
-        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | HALFEXPBITS_DP64 };
-        result = (long long)(x + half.f64);
+        UT64 u = { .f64 = x };
+        if (unlikely((u.u64 & POS_BITSET_DP64) >= LLROUND_INT_BITS)) {
+            /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
+               halfway case that rounds to even, yielding a wrong result. */
+            result = (long long)x;
+        } else {
+            UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | HALFEXPBITS_DP64 };
+            result = (long long)(x + half.f64);
+        }
     }
 
     return result;

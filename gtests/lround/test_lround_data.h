@@ -49,27 +49,27 @@
  */
 
 struct LroundF64Data {
-    uint64_t  in;
-    long      out;
-    int       excepts;
+    uint64_t  m_in;
+    long      m_out;
+    int       m_excepts;
 };
 
 struct LlroundF64Data {
-    uint64_t  in;
-    long long out;
-    int       excepts;
+    uint64_t  m_in;
+    long long m_out;
+    int       m_excepts;
 };
 
 struct LroundF32Data {
-    uint32_t  in;
-    long      out;
-    int       excepts;
+    uint32_t  m_in;
+    long      m_out;
+    int       m_excepts;
 };
 
 struct LlroundF32Data {
-    uint32_t  in;
-    long long out;
-    int       excepts;
+    uint32_t  m_in;
+    long long m_out;
+    int       m_excepts;
 };
 
 /*
@@ -132,7 +132,7 @@ struct LlroundF32Data {
  * Half-integers round away from zero: +0.5 -> 1, -0.5 -> -1, etc.
  */
 static const struct LroundF64Data LroundF64Cases[] = {
-    /* input             out          excepts */
+    /* m_in              m_out        m_excepts */
     { R_D_POS_ZERO,      0L,          0 },
     { R_D_NEG_ZERO,      0L,          0 },
     { R_D_ONE,           1L,          0 },
@@ -161,7 +161,7 @@ static const struct LroundF64Data LroundF64Cases[] = {
  * +2^63 overflows long long: FE_INVALID.
  */
 static const struct LlroundF64Data LlroundF64Cases[] = {
-    /* input               out                       excepts */
+    /* m_in                m_out                     m_excepts */
     { R_D_POS_ZERO,        0LL,                      0 },
     { R_D_NEG_ZERO,        0LL,                      0 },
     { R_D_ONE,             1LL,                      0 },
@@ -194,7 +194,7 @@ static const struct LlroundF64Data LlroundF64Cases[] = {
  * lroundf(float): results fit in long on both 32-bit and 64-bit platforms.
  */
 static const struct LroundF32Data LroundF32Cases[] = {
-    /* input             out          excepts */
+    /* m_in              m_out        m_excepts */
     { R_F_POS_ZERO,      0L,          0 },
     { R_F_NEG_ZERO,      0L,          0 },
     { R_F_ONE,           1L,          0 },
@@ -221,7 +221,7 @@ static const struct LroundF32Data LroundF32Cases[] = {
  * llroundf(float): test cases covering long long range.
  */
 static const struct LlroundF32Data LlroundF32Cases[] = {
-    /* input               out                       excepts */
+    /* m_in                m_out                     m_excepts */
     { R_F_POS_ZERO,        0LL,                      0 },
     { R_F_NEG_ZERO,        0LL,                      0 },
     { R_F_ONE,             1LL,                      0 },
