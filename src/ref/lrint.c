@@ -44,28 +44,37 @@ long ALM_PROTO_REF(lrint)(double x)
     result = (long)_mm_cvtsd_si32(_mm_set_sd(x));
 #endif
 #else
-    /* Threshold: 2^(CHAR_BIT*sizeof(long)-1), the long overflow boundary as a double bit-pattern. */
-    static const uint64_t OvfThreshold =
-        (uint64_t)(CHAR_BIT * sizeof(long) - 1 + 1023) << 52;
-
     UT64 checkbits   = { .f64 = x };
     uint64_t absbits = checkbits.u64 & POS_BITSET_DP64;
 
-    if ((absbits > OvfThreshold) ||
-        ((absbits == OvfThreshold) && ((checkbits.u64 & SIGNBIT_DP64) == 0))) {
-        /* NaN, Inf, x > LONG_MAX, or x < LONG_MIN: out of long range.
-           x = -2^(N-1) (LONG_MIN) has absbits == OvfThreshold with sign set,
-           so it is excluded here and handled by the else-if branch below. */
+    if (unlikely(absbits >= EXP_VAL_52_DP64)) {
+        /* NaN, Inf, or |x| >= 2^52. */
+#if LONG_MAX > 0x7fffffffL
+        /* LP64: exact integers in [2^52, 2^63) are in-range; cast directly.
+           Biased-exponent bit-pattern for 2^63: */
+        static const uint64_t Ovf64 = (uint64_t)(63 + 1023) << 52;
+        if (absbits >= 0x7FF0000000000000ULL ||    /* NaN or Inf */
+            absbits > Ovf64 ||                     /* |x| > 2^63 */
+            (absbits == Ovf64 && !(checkbits.u64 & SIGNBIT_DP64))) { /* x = +2^63 */
+            __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
+            result = LONG_MIN;
+        } else {
+            result = (long)x;  /* exact integer in [-2^63, 2^63), fits in LP64 long */
+        }
+#else
+        /* ILP32: |x| >= 2^52 >> 2^31 = LONG_MAX+1, always out of range. */
         __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
         result = LONG_MIN;
-    } else if (absbits > EXP_VAL_52_DP64) {
-        /* 2^52 < |x|: already integral in double, cast directly. */
-        result = (long)x;
+#endif
     } else {
+        /* |x| < 2^52: round to the nearest integer using the 2^52 add/subtract
+           trick (respects the current rounding mode), then range-check.
+           Checking the *rounded* value rather than the raw exponent is essential
+           on ILP32: a value like -(2^31 + epsilon) rounds to LONG_MIN under
+           FE_TONEAREST / FE_TOWARDZERO / FE_UPWARD and must NOT raise FE_INVALID. */
         UT64 val_2p52 = { .u64 = (checkbits.u64 & SIGNBIT_DP64) | EXP_VAL_52_DP64 };
         double rx = (x + val_2p52.f64) - val_2p52.f64;
-        /* On 32-bit long, rounding can produce 2^31 = LONG_MAX+1; catch it. */
-        if (unlikely(rx > (double)LONG_MAX)) {
+        if (unlikely(rx > (double)LONG_MAX || rx < (double)LONG_MIN)) {
             __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
             result = LONG_MIN;
         } else {
