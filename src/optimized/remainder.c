@@ -89,10 +89,11 @@ static inline double RneD(double q) {
 
 #else // __SSE4_1__
 
-// Without SSE4.1: trunc(q + 0.5) for nonnegative q (== round(q)) but two instructions
-// instead of four, since the sign-handling overhead drops out for nonnegative q.
+// Without SSE4.1: trunc(q + 0.5) for nonneg q equals round-half-away-from-zero.
+// Called only with q in [0, 2^52), so q + 0.5 is always exact (no rounding from the
+// addition), making this independent of the current FP rounding mode.
 //
-// Even-floor half-integer ties are corrected at each call site with:
+// Differs from nearest-even only at half-integer ties; corrected at each call site with:
 //   if (r + r == -y && (int64_t)n & 1) r += y;
 // (no-op in the SSE4.1 path where nearest-even always gives an even n).
 static inline double RneD(double q) { return trunc(q + 0.5); }
@@ -102,8 +103,9 @@ static inline double RneD(double q) { return trunc(q + 0.5); }
 double ALM_PROTO_OPT(remainder)(double x, double y)
 {
     uint64_t ix = asuint64(x);
+    uint64_t iy = asuint64(y);
     uint64_t ax = ix & UINT64_C(0x7fffffffffffffff);
-    uint64_t ay = asuint64(y) & UINT64_C(0x7fffffffffffffff);
+    uint64_t ay = iy & UINT64_C(0x7fffffffffffffff);
     double result;
 
     // Single branch for all special cases.  For normal finite non-zero
@@ -116,26 +118,29 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
         // Signaling NaN (SNaN): exponent=0x7ff, quiet bit (bit 51) clear,
         // mantissa non-zero. Uint64 [0x7ff0000000000001, 0x7ff7ffffffffffff].
         // Per IEEE 754, any SNaN operand raises FE_INVALID.
-        if ((ax - UINT64_C(0x7ff0000000000001)) < UINT64_C(0x0007ffffffffffff) ||
-            (ay - UINT64_C(0x7ff0000000000001)) < UINT64_C(0x0007ffffffffffff))
-            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
+        // Signaling NaN: quiet the operand's own bits to preserve the payload.
+        if ((ax - UINT64_C(0x7ff0000000000001)) < UINT64_C(0x0007ffffffffffff)) {
+            result = __alm_handle_error(ix | UINT64_C(0x0008000000000000), AMD_F_INVALID);
+        } else if ((ay - UINT64_C(0x7ff0000000000001)) < UINT64_C(0x0007ffffffffffff)) {
+            result = __alm_handle_error(iy | UINT64_C(0x0008000000000000), AMD_F_INVALID);
 
         // Quiet NaN: propagate without raising an exception.
-        else if (ax > UINT64_C(0x7ff0000000000000))
+        } else if (ax > UINT64_C(0x7ff0000000000000)) {
             result = x;   // x=QNaN
-        else if (ay > UINT64_C(0x7ff0000000000000))
+        } else if (ay > UINT64_C(0x7ff0000000000000)) {
             result = y;   // y=QNaN
 
         // x=Inf is invalid (y is confirmed not NaN here).
-        else if (ax == UINT64_C(0x7ff0000000000000))
+        } else if (ax == UINT64_C(0x7ff0000000000000)) {
             result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
 
         // y=0: invalid (x is confirmed finite non-zero here).
-        else if (ay == 0)
+        } else if (ay == 0) {
             result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
 
-        else
+        } else {
             result = x;   // y=Inf or x=0
+        }
 
     } else {
         // Reconstruct |x| and |y| as doubles.  IEEE 754 nonnegative doubles are
