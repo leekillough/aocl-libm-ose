@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -71,12 +71,12 @@ test_remainderf_conformance_data[] = {
     {POS_LNORMAL_F32, 0x00000001, 0, NEG_HDENORM_F32}, //EXC_CHK_UNFL
     {POS_HDENORM_F32, 0x007fffff, 0, POS_ONE_F32}, //EXC_CHK_UNFL
     {POS_LDENORM_F32, 0x00000001, 0, NEG_ONE_F32}, //EXC_CHK_UNFL
-    {POS_HDENORM_F32, 0x7fc00000, FE_INVALID, POS_ZERO_F32},
-    {POS_LDENORM_F32, 0x7fc00000, FE_INVALID, NEG_ZERO_F32},
+    {POS_HDENORM_F32, 0xffc00000, FE_INVALID, POS_ZERO_F32},
+    {POS_LDENORM_F32, 0xffc00000, FE_INVALID, NEG_ZERO_F32},
     {POS_HNORMAL_F32, 0x00000000, 0, POS_ONE_F32},
     {POS_LNORMAL_F32, 0x00800000, 0, NEG_ONE_F32},
-    {POS_HNORMAL_F32, 0x7fc00000, FE_INVALID, POS_ZERO_F32},
-    {POS_LNORMAL_F32, 0x7fc00000, FE_INVALID, NEG_ZERO_F32},
+    {POS_HNORMAL_F32, 0xffc00000, FE_INVALID, POS_ZERO_F32},
+    {POS_LNORMAL_F32, 0xffc00000, FE_INVALID, NEG_ZERO_F32},
     {POS_PI_F32, 0x00000000, 0, NEG_PI_F32},
     {NEG_PI_BY2_F32, 0x80000000, 0, POS_PI_BY2_F32},
     // Special cases in IEEE doc},
@@ -84,6 +84,8 @@ test_remainderf_conformance_data[] = {
     {POS_ONE_F32, POS_ONE_F32, 0, POS_INF_F32},
     {NEG_ONE_F32, NEG_ONE_F32, 0, POS_INF_F32},
     {0x80000000, 0x80000000, 0, 0xa8117a2e},
+    {0xC0800000, 0x80000000, 0, 0x40000000},  // remainderf(-4.0f, 2.0f) = -0.0f (signed zero)
+    {POS_QNAN_F32, POS_QNAN_F32, 0, POS_ZERO_F32},  // remainderf(qNaN, 0) = qNaN, no FE_INVALID
 };
 
 static libm_test_special_data_f64
