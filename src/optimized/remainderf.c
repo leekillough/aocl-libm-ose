@@ -17,17 +17,59 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
  * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
  * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
+// float remainderf(float x, float y)
+//
+// Returns x - n*y where n = rint(x/y) (nearest-even integer).
+//
+// Algorithm:
+//
+//   Single combined special-case check:
+//     (ax - 1u) >= 0x7f7fffff || (ay - 1u) >= 0x7f7fffff
+//   fires iff any of: x=NaN, x=Inf, y=NaN, y=Inf, y=0, x=0.
+//   Normal finite non-zero inputs have ax,ay in [1, 0x7f7fffff], so
+//   each of ax-1u, ay-1u is at most 0x7f7ffffe < 0x7f7fffff.
+//   ay=0: ay-1u wraps to 0xffffffff >= 0x7f7fffff.
+//   ax=0: ax-1u wraps to 0xffffffff >= 0x7f7fffff.
+//   ax/ay=Inf (0x7f800000): (ax/ay - 1u) = 0x7f7fffff >= 0x7f7fffff.
+//   ax/ay=NaN (> 0x7f800000): (ax/ay - 1u) >= 0x7f800000 > 0x7f7fffff.
+//   Note: OR of two values each <= 0x7f7ffffe can reach 0x7f7fffff
+//   (false positive for FLT_MAX pairs), so test each operand separately.
+//
+//   Work with ax = |x|, ay = |y|; apply sign of x at end.
+//
+//   Fast path (ax <= ay): n is 0 or 1, no division needed.
+//     2*ax <= ay  -> n=0, result = x
+//     2*ax >  ay  -> n=1, result = sign(x)*(ax - ay) [exact by Sterbenz]
+//
+//   Single-precision path (ax > ay, exponent diff <= ~24):
+//     n = RneF(ax/ay): vroundss imm=8 (SSE4.1, rounding-mode independent) or
+//     trunc(q+0.5) fallback.  r = ax - n*ay via vfnmadd231ss.
+//     If r in [0, ay/2): result is exact, return immediately.
+//     Otherwise (r < 0, r in [ay/2, ay), or r >= ay): fall back to double.
+//
+//   Large-exponent path (d > 52): 24-bit chunk reduction, then single step.
+//
+// Special cases (IEEE 754):
+//   remainder(x,   0)  -> NaN, invalid
+//   remainder(Inf, y)  -> NaN, invalid  (when y is not NaN)
+//   remainder(SNaN, y) -> NaN, invalid
+//   remainder(x, SNaN) -> NaN, invalid
+//   remainder(QNaN, y) -> QNaN          (quiet, no exception)
+//   remainder(x, QNaN) -> QNaN          (quiet, no exception)
+//   remainder(x, Inf)  -> x             (finite x)
+//   remainder(0,   y)  -> 0             (sign preserved)
+
 #include <stdint.h>
 #include <math.h>
-#include <float.h>
+#include <string.h>
 
 #include "libm_macros.h"
 #include "libm_util_amd.h"
@@ -36,143 +78,176 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
+// RneF / RneD: round q to nearest integer, q nonnegative at every call site.
+// SSE4.1 path: vroundss/vroundsd imm=8 -- nearest-even, rounding-mode independent.
+// Non-SSE4.1 path: trunc(q+0.5) = round-half-away-from-zero (not nearest-even).
+//   Half-integer ties that land on the wrong side are corrected at each call site
+//   with: if (r + r == -ady && (int64_t)n & 1) r += ady;
+
+#ifdef __SSE4_1__
+
+// With SSE4.1: vroundss/vroundsd with imm=8 (nearest-even, suppress inexact,
+// ignores MXCSR rounding-mode bits) -- one instruction, exact nearest-even.
+#include <immintrin.h>
+static inline float RneF(float q) {
+    __m128 v = _mm_set_ss(q);
+    return _mm_cvtss_f32(_mm_round_ss(v, v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
+}
+static inline double RneD(double q) {
+    __m128d v = _mm_set_sd(q);
+    return _mm_cvtsd_f64(_mm_round_sd(v, v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
+}
+
+#else // __SSE4_1__
+
+// Without SSE4.1: trunc(q + 0.5) is identical to round(q) for nonnegative q
+// (both are round-half-away-from-zero) but compiles to two instructions
+// (add + trunc) instead of four, because the sign-handling overhead that
+// round()/roundf() carries drops out when q is known to be nonnegative.
+static inline float  RneF(float  q) { return truncf(q + 0.5f); }
+static inline double RneD(double q) { return trunc(q + 0.5); }
+
+#endif // __SSE4_1__
+
+// memcpy() type-punning on float creates single register-register instruction,
+// while union type-punning on float spills registers to the stack
+static inline uint32_t FloatToUint(float f) {
+    uint32_t u;
+    memcpy(&u, &f, sizeof(u));
+    return u;
+}
+
 float ALM_PROTO_OPT(remainderf)(float x, float y)
 {
+    uint32_t  ix = FloatToUint(x);
+    uint32_t  ax = ix & POS_BITSET_F32;
+    uint32_t  ay = FloatToUint(y) & POS_BITSET_F32;
+    float result = x;
 
-    uint32_t fax, fay;
-
-    fax = asuint32(x);
-    fay = asuint32(y);
-
-    fax &= ~SIGNBIT_SP32;
-    fay &= ~SIGNBIT_SP32;
-
-    /*   Check for special inputs:
-     *   x is Inf or NaN : fax >= POS_INF_F32
-     *   y is NaN        : fay >  POS_INF_F32
-     *   y is zero       : fay == 0
-     */
-    if(unlikely((fax >= POS_INF_F32) | (fay > POS_INF_F32) | (fay == 0)))
-    {
-        /* NaN in either operand: return NaN. */
-        if((fax > POS_INF_F32) || (fay > POS_INF_F32))
-        {
-            return x * y;
+    // Single branch for all special cases.  For normal finite non-zero
+    // inputs ax,ay in [1, 0x7f7fffff], so ax-1u and ay-1u are each at most
+    // 0x7f7ffffe -- both strictly below 0x7f7fffffu.  The branch is taken
+    // only when at least one of x, y is zero, Inf, or NaN.
+    if (unlikely((ax - 1u >= POS_HNORMAL_F32) || (ay - 1u >= POS_HNORMAL_F32))) {
+        // Signaling NaN (SNaN): exponent=0xff, quiet bit (bit 22) clear,
+        // mantissa non-zero.  Uint32 range [0x7f800001, 0x7fbfffff].
+        // Per IEEE 754, any SNaN operand raises FE_INVALID.
+        // Test: subtract 0x7f800001; result < 0x003fffff iff SNaN.
+        if ((ax - 0x7f800001u < 0x003fffffu) ||
+            (ay - 0x7f800001u < 0x003fffffu)) {
+            result = __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
+        } else if (ax <= POS_INF_F32) { // x is not QNaN (QNaN falls through, keeping result=x)
+            if (ay > POS_INF_F32) {
+                result = y;  // y=QNaN
+            } else if ((ax == POS_INF_F32) || (ay == 0u)) {
+                // x=Inf or y=0: invalid operation
+                result = __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
+            } // else y=Inf or x=0: result stays x
         }
-        /* Otherwise y == 0 or x == INF: domain error. */
-        return __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
+    } else {
+        // Reconstruct |x| and |y| as floats.  IEEE 754 nonnegative floats are
+        // monotone in their integer representation, so ax <= ay iff |x| <= |y|.
+        float fax, fay;
+        memcpy(&fax, &ax, sizeof(fax));
+        memcpy(&fay, &ay, sizeof(fay));
+
+        // Fast path: |x| <= |y|.  n is 0 or 1; no division needed.
+        // 2*fax is exact (no overflow: ax < 0x7f800000).
+        // fax - fay is exact by Sterbenz (fay/2 < fax <= fay for n=1 case).
+        if (likely(ax <= ay)) {
+            float ax2 = fax + fax;
+             // If ax2 <= fay, n=0 (includes tie 2|x|==|y|: rounds to 0)
+            if (ax2 > fay) {
+                float r = fax - fay;  // exact by Sterbenz, n=1
+                result = (r == 0.0f) ? copysignf(0.0f, x)
+                       : (ix & SIGNBIT_SP32) ? -r : r;
+            }
+        } else {
+            // |x| > |y|.  Attempt single-precision reduction first.
+            // RneF rounds q to the nearest-even integer, rounding-mode independently,
+            // via vroundss imm=8 (SSE4.1) or trunc(q+0.5) (fallback, nonneg q).
+            // The compiler emits vdivss + round + vfnmadd231ss in XMM registers.
+            //
+            // r_f can be negative when RneF rounds up (fractional part > 0.5, or a
+            // half-integer tie rounded toward the odd neighbour in the fallback path),
+            // and can be >= fay when the exponent difference exceeds ~24 bits.
+            // Both cases fall through to the double path below.
+            float q_f = fax / fay;             // vdivss
+            float n_f = RneF(q_f);             // nearest-even (SSE4.1) or round-half-up (fallback)
+            float r_f = fmaf(-n_f, fay, fax);  // vfnmadd231ss
+
+            // Fast path: r_f is the exact remainder when it falls in [0, fay/2).
+            // The correct remainder range is (-fay/2, fay/2]; values in [fay/2, fay)
+            // mean n_f should have been one higher, so those fall through to double.
+            // Using the unsigned integer trick: for nonneg IEEE 754 floats the bit
+            // pattern is monotone, so FloatToUint(r_f) < FloatToUint(fay*0.5f)
+            // iff 0.0f <= r_f < fay/2.  Negative r_f has its sign bit set, giving a
+            // large unsigned value that always fails the test.
+            uint32_t half_ay = FloatToUint(fay * 0.5f);
+            if (likely(FloatToUint(r_f) < half_ay)) {
+                result = (r_f == 0.0f) ? copysignf(0.0f, x)
+                       : (ix & SIGNBIT_SP32) ? -r_f : r_f;
+            } else {
+                // Float path inaccurate: r_f < 0 (RneF rounded up, or fay is a tiny
+                // denormal causing q_f to overflow to inf), r_f in [fay/2, fay) (n_f too
+                // small -- true remainder is negative), or r_f >= fay (exponent difference
+                // > ~24 bits, n_f lost low bits).
+                //
+                // Recompute entirely in double using RneD (rounding-mode independent).
+                double adx = (double)fax;
+                double ady = (double)fay;
+                uint64_t adx_bits = asuint64(adx);
+                uint64_t ady_bits = asuint64(ady);
+                int32_t xe_d = (int32_t)(adx_bits >> EXPSHIFTBITS_DP64);
+                int32_t ye_d = (int32_t)(ady_bits >> EXPSHIFTBITS_DP64);
+                int32_t d    = xe_d - ye_d;
+
+                if (likely(d <= EXPSHIFTBITS_DP64)) {
+                    double n_d = RneD(adx / ady);
+                    double r = fma(-n_d, ady, adx);
+                    if (unlikely(r >= ady)) {
+                        r -= ady;
+                    } else if (unlikely(r < -ady)) {
+                        r += ady;
+                    // Fallback tie correction: trunc(q+0.5) gives n_d = N+1 (odd) for an
+                    // even-floor half-integer tie; RneD gives n_d = N (even).  Correct
+                    // the fallback case; harmless in the SSE4.1 path (n_d is already even).
+                    } else if (unlikely(r + r == -ady && (int64_t)n_d & 1)) {
+                        r += ady;
+                    }
+                    adx = r;
+                } else {
+                    // d > 52: multi-step 24-bit chunk reduction.
+                    int32_t nsteps = d / 24;
+                    uint64_t wu = ady_bits + ((uint64_t)(24 * nsteps) << EXPSHIFTBITS_DP64);
+                    double w = asdouble(wu);
+                    for (int32_t i = 0; i < nsteps; i++) {
+                        uint64_t q = (uint64_t)(adx / w);
+                        adx -= (double)q * w;
+                        w *= 0x1p-24;  // 2^-24
+                    }
+                    double n = RneD(adx / w);
+                    adx = fma(-n, w, adx);
+                    if (unlikely(adx >= ady)) {
+                        adx -= ady;
+                    } else if (unlikely(adx < -ady)) {
+                        adx += ady;
+                    } else if (unlikely(adx + adx == -ady && (int64_t)n & 1)) {
+                        adx += ady;
+                    }
+                }
+
+                if (adx == 0.0) {
+                    result = copysignf(0.0f, x);
+                } else {
+                    float rf = (float)(adx < 0.0 ? -adx : adx);
+                    uint32_t sign_r = adx < 0.0 ? SIGNBIT_SP32 : 0u;
+                    uint32_t result_bits = FloatToUint(rf) | ((ix & SIGNBIT_SP32) ^ sign_r);
+                    memcpy(&result, &result_bits, sizeof(result));
+                }
+            }
+        }
     }
 
-    if(fax == fay)
-    {
-        /* |x| == |y|: remainder is zero with the sign of x. */
-        return (0.0f * x);
-    }
-
-    double dx = (double)x;
-    double dy = (double)y;
-
-    uint64_t ax = asuint64(dx);
-    uint64_t ay = asuint64(dy);
-
-    ax &= POS_BITSET_DP64;
-    ay &= POS_BITSET_DP64;
-
-    double adx = asdouble(ax);
-    double ady = asdouble(ay);
-
-    uint64_t xe = (EXPBITS_DP64 & ax) >> 52;
-    uint64_t ye = (EXPBITS_DP64 & ay) >> 52;
-
-    if(adx < ady)
-    {
-        double temp = 0.5 * ady;
-        if(adx > temp)
-        {
-            adx -= ady;
-        }
-
-        if(x == 0)
-        {
-            return x;
-        }
-        else if(x > 0)
-        {
-            return (float)adx;
-        }
-        else
-        {
-            adx = -adx;
-            return (float)adx;
-        }
-    }
-
-    int64_t scale = 0x3FF0000000000000;
-    int64_t quo = 0;
-
-    if(ye < xe)
-    {
-        int64_t diff_exp = (int64_t)(xe - ye);
-        quo = diff_exp / 24;
-
-        scale = 24 * quo;
-        scale += 1023;
-        scale = scale << 52;
-    }
-
-    double w = asdouble((uint64_t)scale) * ady;
-    double two_p_MINUS_24 = asdouble(0x3E70000000000000);
-    double t=0, temp2=0;
-
-    while(1)
-    {
-        quo--;
-        if(quo < 0)
-        {
-            break;
-        }
-
-        t = adx / w;
-        uint64_t tu = (uint64_t)t;
-        t = (double)(tu);
-
-        t *= w;
-        w *= two_p_MINUS_24;
-        adx -= t;
-    }
-
-    temp2 = adx / w;
-    uint64_t tu = (uint64_t)temp2;
-    temp2 = (double)(tu);
-
-    int32_t todd = ((int64_t)(dx / w)) & 1;
-    double temp3 = temp2 * w;
-    adx -= temp3;
-
-    double w_half = 0.5 * w;
-
-    if( (todd == 1) && (w_half == adx) )
-    {
-        adx = adx - w;
-        if(dx<0)
-        {
-            adx = -adx;
-        }
-        return (float)adx;
-    }
-
-    if(w_half >= adx)
-    {
-        if(dx<0)
-        {
-            adx = -adx;
-        }
-        return (float)adx;
-    }
-    adx = adx - w;
-    if(dx<0)
-    {
-        adx = -adx;
-    }
-    return (float)adx;
+    return result;
 }
