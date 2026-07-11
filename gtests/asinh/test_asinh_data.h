@@ -35,18 +35,18 @@
  */
 static libm_test_special_data_f32
 test_asinhf_conformance_data[] = {
-   {0x00000001, 0x00000001,  FE_INEXACT},  // denormal min
-   {0x0005fde6, 0x0005fde6,  FE_INEXACT},  // denormal intermediate
-   {0x007fffff, 0x007fffff,  FE_INEXACT},  // denormal max
-   {0x80000001, 0x80000001,  FE_INEXACT},  // -denormal min
-   {0x805def12, 0x805def12,  FE_INEXACT},  // -denormal intermediate
-   {0x807FFFFF, 0x807fffff,  FE_INEXACT},  // -denormal max
-   {0x00800000, 0x00800000,  FE_INEXACT},  // normal min
+   {0x00000001, 0x00000001,  0},  // denormal min
+   {0x0005fde6, 0x0005fde6,  0},  // denormal intermediate
+   {0x007fffff, 0x007fffff,  0},  // denormal max
+   {0x80000001, 0x80000001,  0},  // -denormal min
+   {0x805def12, 0x805def12,  0},  // -denormal intermediate
+   {0x807FFFFF, 0x807fffff,  0},  // -denormal max
+   {0x00800000, 0x00800000,  0},  // normal min
    {0x43b3c4ea, 0x40d27ebb,  0},  // normal intermediate
    {0x7f7fffff, 0x42b2d4fc,  0},  // normal max
-   {0x80800000, 0x80800000,  FE_INEXACT},  // -normal min
-   {0xc5812e71, 0xc1105255,  FE_INEXACT},  // -normal intermediate
-   {0xFF7FFFFF, 0xc2b2d4fc,  FE_INEXACT},  // -normal max
+   {0x80800000, 0x80800000,  0},  // -normal min
+   {0xc5812e71, 0xc1105255,  0},  // -normal intermediate
+   {0xFF7FFFFF, 0xc2b2d4fc,  0},  // -normal max
    {0x7F800000, 0x7f800000,  0},  // inf
    {0xfF800000, 0xff800000,  0},  // -inf
    {0x7Fc00000, 0x7fc00000,  0},  // qnan min
@@ -69,48 +69,48 @@ test_asinhf_conformance_data[] = {
    {0x402DF854, 0x3fdcd956,  0},  // e
    {0x402DF855, 0x3fdcd956,  0},  // e ++
    {0x00000000, 0x00000000,  0},  // 0
-   {0x37C0F01F, 0x37c0f01f,  FE_INEXACT},  // 0.000023
-   {0x3EFFFEB0, 0x3ef66039,  FE_INEXACT},  // 0.49999
-   {0x3F0000C9, 0x3ef662cd,  FE_INEXACT},  // 0.500012
+   {0x37C0F01F, 0x37c0f01f,  0},  // 0.000023
+   {0x3EFFFEB0, 0x3ef66039,  0},  // 0.49999
+   {0x3F0000C9, 0x3ef662cd,  0},  // 0.500012
    {0x80000000, 0x80000000,  0},  // -0
-   {0xb7C0F01F, 0xb7c0f01f,  FE_INEXACT},  // -0.000023
-   {0xbEFFFEB0, 0xbef66039,  FE_INEXACT},  // -0.49999
-   {0xbF0000C9, 0xbef662cd,  FE_INEXACT},  // -0.500012
+   {0xb7C0F01F, 0xb7c0f01f,  0},  // -0.000023
+   {0xbEFFFEB0, 0xbef66039,  0},  // -0.49999
+   {0xbF0000C9, 0xbef662cd,  0},  // -0.500012
    {0x3f800000, 0x3f61a1b3,  0},  // 1
-   {0x3f700001, 0x3f5623ae,  FE_INEXACT},  // 0.93750006
+   {0x3f700001, 0x3f5623ae,  0},  // 0.93750006
    {0x3F87FFFE, 0x3f6cc53a,  0},  // 1.0624998
    {0x3FBFFFAC, 0x3f98edd2,  0},  // 1.49999
    {0x3FC00064, 0x3f98ee38,  0},  // 1.500012
-   {0xbf800000, 0xbf61a1b3,  FE_INEXACT},  // -1
-   {0xbf700001, 0xbf5623ae,  FE_INEXACT},  // -0.93750006
-   {0xbF87FFFE, 0xbf6cc53a,  FE_INEXACT},  // -1.0624998
-   {0xbFBFFFAC, 0xbf98edd2,  FE_INEXACT},  // -1.49999
-   {0xbFC00064, 0xbf98ee38,  FE_INEXACT},  // -1.500012
+   {0xbf800000, 0xbf61a1b3,  0},  // -1
+   {0xbf700001, 0xbf5623ae,  0},  // -0.93750006
+   {0xbF87FFFE, 0xbf6cc53a,  0},  // -1.0624998
+   {0xbFBFFFAC, 0xbf98edd2,  0},  // -1.49999
+   {0xbFC00064, 0xbf98ee38,  0},  // -1.500012
    {0x40000000, 0x3fb8c90c,  0},  // 2
-   {0xc0000000, 0xbfb8c90c,  FE_INEXACT},  // -2
+   {0xc0000000, 0xbfb8c90c,  0},  // -2
    {0x41200000, 0x403fe2e3,  0},  // 10
-   {0xc1200000, 0xc03fe2e3,  FE_INEXACT},  // -10
+   {0xc1200000, 0xc03fe2e3,  0},  // -10
    {0x447A0000, 0x40f33a98,  0},  // 1000
-   {0xc47A0000, 0xc0f33a98,  FE_INEXACT},  // -1000
+   {0xc47A0000, 0xc0f33a98,  0},  // -1000
    {0x4286CCCC, 0x409cec51,  0},  // 67.4
-   {0xc286CCCC, 0xc09cec51,  FE_INEXACT},  // -67.4
+   {0xc286CCCC, 0xc09cec51,  0},  // -67.4
    {0x44F7F333, 0x410492b4,  0},  // 1983.6
-   {0xc4F7F333, 0xc10492b4,  FE_INEXACT},  // -1983.6
+   {0xc4F7F333, 0xc10492b4,  0},  // -1983.6
    {0x42AF0000, 0x40a54632,  0},  // 87.5
-   {0xc2AF0000, 0xc0a54632,  FE_INEXACT},  // -87.5
+   {0xc2AF0000, 0xc0a54632,  0},  // -87.5
    {0x48015E40, 0x4147cbe7,  0},  // 132473
-   {0xc8015E40, 0xc147cbe7,  FE_INEXACT},  // -132473
+   {0xc8015E40, 0xc147cbe7,  0},  // -132473
    {0x4B000000, 0x41851592,  0},  // 2^23
    {0x4B000001, 0x41851592,  0},  // 2^23 + 1
    {0x4AFFFFFF, 0x41851592,  0},  // 2^23 -1 + 0.5
-   {0xcB000000, 0xc1851592,  FE_INEXACT},  // -2^23
-   {0xcB000001, 0xc1851592,  FE_INEXACT},  // -(2^23 + 1)
-   {0xcAFFFFFF, 0xc1851592,  FE_INEXACT},  // -(2^23 -1 + 0.5)
+   {0xcB000000, 0xc1851592,  0},  // -2^23
+   {0xcB000001, 0xc1851592,  0},  // -(2^23 + 1)
+   {0xcAFFFFFF, 0xc1851592,  0},  // -(2^23 -1 + 0.5)
 
     // special accuracy tests
-   {0x38800000, 0x38800000,  FE_INEXACT}, //
-   {0x387FFFFF, 0x387fffff,  FE_INEXACT}, //
-   {0x38800001, 0x38800001,  FE_INEXACT}, //
+   {0x38800000, 0x38800000,  0}, //
+   {0x387FFFFF, 0x387fffff,  0}, //
+   {0x38800001, 0x38800001,  0}, //
    {0x7f7fffec, 0x42b2d4fc,  0}, //
    {0x7f7fff6c, 0x42b2d4fb,  0}, //
    {0x42B2D4FD, 0x40a5f7a1,  0}, //
@@ -122,7 +122,7 @@ test_asinhf_conformance_data[] = {
    {0x46000000, 0x411b43d5,  0}, //
    {0x46000001, 0x411b43d5,  0}, //
    {0x45ffffff, 0x411b43d5,  0}, //
-   {0x3F317217, 0x3f25a4a3,  FE_INEXACT}, //
+   {0x3F317217, 0x3f25a4a3,  0}, //
    {0x40000000, 0x3fb8c90c,  0}, //
    {0x40000001, 0x3fb8c90d,  0}, //
    {0x3fffffff, 0x3fb8c90c,  0}, //
