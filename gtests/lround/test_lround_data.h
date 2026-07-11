@@ -36,14 +36,14 @@
  *
  * Two separate tables are provided for each precision, mirroring the lrint layout:
  *
- *   lround_f64_cases: double inputs, expected results fit in long on all
+ *   LroundF64Cases: double inputs, expected results fit in long on all
  *     platforms (|result| <= 2^31-1), plus NaN/Inf/overflow cases where
  *     lround returns LONG_MIN with FE_INVALID.
  *
- *   llround_f64_cases: double inputs testing llround-specific ranges where
+ *   LlroundF64Cases: double inputs testing llround-specific ranges where
  *     the result may exceed 32-bit long but fits in long long.
  *
- *   lround_f32_cases / llround_f32_cases: same split for float inputs.
+ *   LroundF32Cases / LlroundF32Cases: same split for float inputs.
  *
  * excepts field: expected FE_INVALID (or 0).
  */
@@ -131,7 +131,7 @@ struct LlroundF32Data {
  * Out-of-range inputs return LONG_MIN with FE_INVALID.
  * Half-integers round away from zero: +0.5 -> 1, -0.5 -> -1, etc.
  */
-static const struct LroundF64Data lround_f64_cases[] = {
+static const struct LroundF64Data LroundF64Cases[] = {
     /* input             out          excepts */
     { R_D_POS_ZERO,      0L,          0 },
     { R_D_NEG_ZERO,      0L,          0 },
@@ -160,7 +160,7 @@ static const struct LroundF64Data lround_f64_cases[] = {
  * -2^63 = LLONG_MIN is a valid input (exact integral double); no FE_INVALID.
  * +2^63 overflows long long: FE_INVALID.
  */
-static const struct LlroundF64Data llround_f64_cases[] = {
+static const struct LlroundF64Data LlroundF64Cases[] = {
     /* input               out                       excepts */
     { R_D_POS_ZERO,        0LL,                      0 },
     { R_D_NEG_ZERO,        0LL,                      0 },
@@ -193,7 +193,7 @@ static const struct LlroundF64Data llround_f64_cases[] = {
 /*
  * lroundf(float): results fit in long on both 32-bit and 64-bit platforms.
  */
-static const struct LroundF32Data lround_f32_cases[] = {
+static const struct LroundF32Data LroundF32Cases[] = {
     /* input             out          excepts */
     { R_F_POS_ZERO,      0L,          0 },
     { R_F_NEG_ZERO,      0L,          0 },
@@ -220,7 +220,7 @@ static const struct LroundF32Data lround_f32_cases[] = {
 /*
  * llroundf(float): test cases covering long long range.
  */
-static const struct LlroundF32Data llround_f32_cases[] = {
+static const struct LlroundF32Data LlroundF32Cases[] = {
     /* input               out                       excepts */
     { R_F_POS_ZERO,        0LL,                      0 },
     { R_F_NEG_ZERO,        0LL,                      0 },
