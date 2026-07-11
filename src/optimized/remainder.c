@@ -38,8 +38,8 @@
 //   each of ax-1, ay-1 is at most 0x7feffffffffffffe < 0x7fefffffffffffff.
 //   ay=0: ay-1 wraps to 0xffffffffffffffff >= 0x7fefffffffffffff.
 //   ax=0: ax-1 wraps to 0xffffffffffffffff >= 0x7fefffffffffffff.
-//   x/y=Inf (0x7ff0000000000000): ax/ay-1 = 0x7fefffffffffffff.
-//   x/y=NaN (> 0x7ff0000000000000): ax/ay-1 >= 0x7ff0000000000000.
+//   ax=Inf (0x7ff0000000000000): ax-1 = 0x7fefffffffffffff.
+//   ax=NaN (> 0x7ff0000000000000): ax-1 >= 0x7ff0000000000000.
 //
 //   Work with ax = |x|, ay = |y|; apply sign of x at end.
 //
@@ -156,17 +156,21 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
                        : (ix & UINT64_C(0x8000000000000000)) ? -r : r;
             }
         } else {
-            int32_t xe_d = (int32_t)(ax >> 52);
-            int32_t ye_d = (int32_t)(ay >> 52);
+            // Raw biased exponent fields suffice for d: the 1023 bias cancels in the
+            // subtraction, and for subnormal y (biased field 0) nsteps is off by at
+            // most 2, which the final RneD step absorbs without loss of correctness.
+            int32_t xe_d = (int32_t)(ax >> EXPSHIFTBITS_DP64);
+            int32_t ye_d = (int32_t)(ay >> EXPSHIFTBITS_DP64);
             int32_t d    = xe_d - ye_d;
 
-            if (likely(d <= 52)) {
+            if (likely(d <= EXPSHIFTBITS_DP64)) {
+                double half_ady = ady * 0x1p-1;
                 double n_d = RneD(adx / ady);
                 double r   = fma(-n_d, ady, adx);
 
-                if (unlikely(r >= ady))
+                if (unlikely(r > half_ady))
                     r -= ady;
-                else if (unlikely(r < -ady || (r + r == -ady && (int64_t)n_d & 1)))
+                else if (unlikely(r < -half_ady || (r + r == -ady && (int64_t)n_d & 1)))
                     r += ady;
 
                 result = (r == 0.0) ? copysign(0.0, x)
@@ -178,18 +182,22 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
                 // 24 bits by construction).  scalbn is used instead of bit-manipulation
                 // so that subnormal ady is handled correctly.
                 int32_t nsteps = d / 24;
-                double w = ye_d > 0 ? asdouble(ay + ((uint64_t)(24 * nsteps) << 52))
+                // asdouble(ay + ...) is safe only for normal ady (subnormal ady has
+                // biased exponent field 0 so adding overflows into the mantissa bits).
+                double w = ay >= UINT64_C(0x0010000000000000)
+                    ? asdouble(ay + ((uint64_t)(24 * nsteps) << EXPSHIFTBITS_DP64))
                     : scalbn(ady, 24 * nsteps);
                 for (int32_t i = 0; i < nsteps; i++) {
                     uint64_t q = (uint64_t)(adx / w);
                     adx -= (double)q * w;
                     w *= 0x1p-24;  // 2^-24
                 }
+                double half_ady = ady * 0x1p-1;
                 double n = RneD(adx / w);
                 adx = fma(-n, w, adx);
-                if (unlikely(adx >= ady))
+                if (unlikely(adx > half_ady))
                     adx -= ady;
-                else if (unlikely(adx < -ady || (adx + adx == -ady && (int64_t)n & 1)))
+                else if (unlikely(adx < -half_ady || (adx + adx == -ady && (int64_t)n & 1)))
                     adx += ady;
 
                 result = (adx == 0.0) ? copysign(0.0, x)
