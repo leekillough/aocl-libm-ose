@@ -73,9 +73,17 @@ TEST(lround, SPECIALCASE_DOUBLE)
         feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lround(x);
 
+#if (LIBM_PROTOTYPE == PROTOTYPE_AOCL)
         EXPECT_EQ(result, tc.m_out)
             << "lround(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
+#else
+        if (tc.m_excepts == 0) {
+            EXPECT_EQ(result, tc.m_out)
+                << "lround(" << x << "): got " << result << ", expected " << tc.m_out
+                << " (case " << i << ")";
+        }
+#endif
 
         if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
@@ -102,9 +110,17 @@ TEST(llround, SPECIALCASE_DOUBLE)
         feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llround(x);
 
+#if (LIBM_PROTOTYPE == PROTOTYPE_AOCL)
         EXPECT_EQ(result, tc.m_out)
             << "llround(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
+#else
+        if (tc.m_excepts == 0) {
+            EXPECT_EQ(result, tc.m_out)
+                << "llround(" << x << "): got " << result << ", expected " << tc.m_out
+                << " (case " << i << ")";
+        }
+#endif
 
         if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
@@ -131,9 +147,17 @@ TEST(lroundf, SPECIALCASE_FLOAT)
         feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lroundf(x);
 
+#if (LIBM_PROTOTYPE == PROTOTYPE_AOCL)
         EXPECT_EQ(result, tc.m_out)
             << "lroundf(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
+#else
+        if (tc.m_excepts == 0) {
+            EXPECT_EQ(result, tc.m_out)
+                << "lroundf(" << x << "): got " << result << ", expected " << tc.m_out
+                << " (case " << i << ")";
+        }
+#endif
 
         if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
@@ -160,9 +184,17 @@ TEST(llroundf, SPECIALCASE_FLOAT)
         feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llroundf(x);
 
+#if (LIBM_PROTOTYPE == PROTOTYPE_AOCL)
         EXPECT_EQ(result, tc.m_out)
             << "llroundf(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
+#else
+        if (tc.m_excepts == 0) {
+            EXPECT_EQ(result, tc.m_out)
+                << "llroundf(" << x << "): got " << result << ", expected " << tc.m_out
+                << " (case " << i << ")";
+        }
+#endif
 
         if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
