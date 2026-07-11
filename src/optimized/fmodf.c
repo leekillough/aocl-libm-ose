@@ -48,11 +48,6 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     {
         result = x * y;
     }
-    /* Check if y is Zero. If yes, return NaN and raise exception*/
-    else if (unlikely(fay == 0))
-    {
-        result = __alm_handle_errorf(QNANBITPATT_SP32, AMD_F_INVALID);
-    }
     else
     {
         uint32_t fax = asuint32(x) & ~SIGNBIT_SP32;
@@ -60,14 +55,9 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
         /* Check if x is NaN or INF */
         if (unlikely((~fax & EXPBITS_SP32) == 0))
         {
-            /* x is NaN. Return NaN */
+            /* x is NaN: return NaN. qNaN must not raise FE_INVALID. */
             if (fax > POS_INF_F32)
             {
-                /*
-                  The old Windows path that called __alm_handle_errorf for x
-                  NaN was wrong; it unconditionally raised FE_INVALID for qNaN
-                  inputs, which violates IEEE 754.
-                */
                 result = x + x;
             }
             else
@@ -75,6 +65,11 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 /* x is INF. Return NaN and raise exception */
                 result = __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
             }
+        }
+        /* Check if y is Zero. If yes, return NaN and raise exception */
+        else if (unlikely(fay == 0))
+        {
+            result = __alm_handle_errorf(QNANBITPATT_SP32, AMD_F_INVALID);
         }
         else if (fax == fay)
         {
@@ -98,8 +93,9 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                     adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
 
                     /* Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady */
-                    if (adx < 0)
+                    if (adx < 0) {
                         adx += ady;
+                    }
                 }
                 while (unlikely(quo-- != 0));
 

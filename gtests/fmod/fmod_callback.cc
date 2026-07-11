@@ -57,13 +57,13 @@ bool getSpecialCase(void)
 }
 
 void ConfSetupf32(SpecParams *specp) {
-  specp->data32 = test_fmodf_conformance_data;
-  specp->countf = ARRAY_SIZE(test_fmodf_conformance_data);
+  specp->data32 = TestFmodfConformanceData;
+  specp->countf = ARRAY_SIZE(TestFmodfConformanceData);
 }
 
 void ConfSetupf64(SpecParams *specp) {
-  specp->data64 = test_fmod_conformance_data;
-  specp->countd = ARRAY_SIZE(test_fmod_conformance_data);
+  specp->data64 = TestFmodConformanceData;
+  specp->countd = ARRAY_SIZE(TestFmodConformanceData);
 }
 
 float getFuncOp(float *data) {

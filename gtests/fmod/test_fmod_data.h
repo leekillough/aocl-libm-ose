@@ -34,7 +34,7 @@
  * These values as as per GLIBC output
  */
 static libm_test_special_data_f32
-test_fmodf_conformance_data[] = {
+TestFmodfConformanceData[] = {
         {NEG_QNAN_F32, POS_QNAN_F32, 0, NEG_INF_F32},
     {0xfff4b200, 0x7fc00001, 0, 0x5c713452},
     /* Constant inputs from the Constants.h */
@@ -88,10 +88,12 @@ test_fmodf_conformance_data[] = {
     {POS_ONE_F32, POS_ONE_F32, 0, POS_INF_F32},
     {NEG_ONE_F32, NEG_ONE_F32, 0, POS_INF_F32},
     {0x80000000, 0x80000000, 0, 0xa8117a2e},
+    // fmodf(qNaN, 0): qNaN takes precedence; must return qNaN without raising FE_INVALID
+    {POS_QNAN_F32, POS_QNAN_F32, 0, POS_ZERO_F32},
 };
 
 static libm_test_special_data_f64
-test_fmod_conformance_data[] = {
+TestFmodConformanceData[] = {
     {NEG_QNAN_F64, NEG_QNAN_F64, 0, NEG_INF_F64}, // Refer to Section 7.2 point f of document IEEE 754-2008
     {0x3cab03fe1ef3a8fd, 0x7ff8000000000001, 0, 0xfffd2eb531b604d6},
     {NEG_QNAN_F64, POS_QNAN_F64, FE_INVALID, POS_SNAN_F64},
@@ -146,4 +148,6 @@ test_fmod_conformance_data[] = {
     {POS_ONE_F64, POS_ONE_F64, 0, POS_INF_F64},
     {NEG_ONE_F64, NEG_ONE_F64, 0, POS_INF_F64},
     {0x8000000000000000LL, 0x8000000000000000LL, 0, 0xa8117a2e00000000LL},
+    // fmod(qNaN, 0): qNaN takes precedence; must return qNaN without raising FE_INVALID
+    {POS_QNAN_F64, POS_QNAN_F64, 0, POS_ZERO_F64},
 };

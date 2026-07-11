@@ -64,7 +64,7 @@
 /* General path for subnormals or exponent difference > 52.
  * Kept out-of-line and cold so the fast path saves no XMM registers. */
 NOINLINE_COLD
-static double FmodGeneral(double adx, double ady)
+static double FmodGeneral(double adx, const double ady)
 {
     double w = ady;
     double t = adx * SCALE_2_POW_N52;
@@ -119,11 +119,6 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
     {
         result = x * y;
     }
-    /* Check if y is Zero. If yes, return NaN and raise exception */
-    else if (unlikely(ay == 0))
-    {
-        result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
-    }
     else
     {
         uint64_t ax = asuint64(x) & ~SIGNBIT_DP64;
@@ -131,14 +126,9 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         /* Check if x is NaN or INF */
         if (unlikely((~ax & EXPBITS_DP64) == 0))
         {
-            /* x is NaN. Return NaN */
+            /* x is NaN: return NaN. qNaN must not raise FE_INVALID. */
             if (ax > POS_INF_F64)
             {
-                /*
-                  The old Windows path that called __alm_handle_error for x
-                  NaN was wrong; it unconditionally raised FE_INVALID for qNaN
-                  inputs, which violates IEEE 754.
-                */
                 result = x + x;
             }
             else
@@ -146,6 +136,11 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                 /* x is INF. Return NaN and raise exception */
                 result = __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
             }
+        }
+        /* Check if y is Zero. If yes, return NaN and raise exception */
+        else if (unlikely(ay == 0))
+        {
+            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
         }
         else if (ax == ay)
         {
