@@ -68,16 +68,16 @@ TEST(lrint, SPECIALCASE_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(LrintF64Cases) / sizeof(LrintF64Cases[0]); ++i) {
         const struct LrintF64Data &tc = LrintF64Cases[i];
-        double x = bits_to_double(tc.in);
+        double x = bits_to_double(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lrint(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "lrint(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "lrint(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "lrint(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";
@@ -115,16 +115,16 @@ TEST(llrint, SPECIALCASE_DOUBLE)
 {
     for (size_t i = 0; i < sizeof(LlrintF64Cases) / sizeof(LlrintF64Cases[0]); ++i) {
         const struct LlrintF64Data &tc = LlrintF64Cases[i];
-        double x = bits_to_double(tc.in);
+        double x = bits_to_double(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llrint(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "llrint(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "llrint(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "llrint(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";
@@ -144,16 +144,16 @@ TEST(lrintf, SPECIALCASE_FLOAT)
 {
     for (size_t i = 0; i < sizeof(LrintF32Cases) / sizeof(LrintF32Cases[0]); ++i) {
         const struct LrintF32Data &tc = LrintF32Cases[i];
-        float x = bits_to_float(tc.in);
+        float x = bits_to_float(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long result = amd_lrintf(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "lrintf(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "lrintf(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "lrintf(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";
@@ -173,16 +173,16 @@ TEST(llrintf, SPECIALCASE_FLOAT)
 {
     for (size_t i = 0; i < sizeof(LlrintF32Cases) / sizeof(LlrintF32Cases[0]); ++i) {
         const struct LlrintF32Data &tc = LlrintF32Cases[i];
-        float x = bits_to_float(tc.in);
+        float x = bits_to_float(tc.m_in);
 
         feclearexcept(FE_ALL_EXCEPT);
         long long result = amd_llrintf(x);
 
-        EXPECT_EQ(result, tc.out)
-            << "llrintf(" << x << "): got " << result << ", expected " << tc.out
+        EXPECT_EQ(result, tc.m_out)
+            << "llrintf(" << x << "): got " << result << ", expected " << tc.m_out
             << " (case " << i << ")";
 
-        if (tc.excepts != 0) {
+        if (tc.m_excepts != 0) {
             EXPECT_NE(fetestexcept(FE_INVALID), 0)
                 << "llrintf(" << x << "): expected FE_INVALID but it was not raised"
                 << " (case " << i << ")";

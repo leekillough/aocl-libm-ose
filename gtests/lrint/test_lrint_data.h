@@ -50,27 +50,27 @@
  */
 
 struct LrintF64Data {
-    uint64_t  in;
-    long      out;
-    int       excepts;
+    uint64_t  m_in;
+    long      m_out;
+    int       m_excepts;
 };
 
 struct LlrintF64Data {
-    uint64_t  in;
-    long long out;
-    int       excepts;
+    uint64_t  m_in;
+    long long m_out;
+    int       m_excepts;
 };
 
 struct LrintF32Data {
-    uint32_t  in;
-    long      out;
-    int       excepts;
+    uint32_t  m_in;
+    long      m_out;
+    int       m_excepts;
 };
 
 struct LlrintF32Data {
-    uint32_t  in;
-    long long out;
-    int       excepts;
+    uint32_t  m_in;
+    long long m_out;
+    int       m_excepts;
 };
 
 /*
@@ -135,7 +135,7 @@ struct LlrintF32Data {
  * Out-of-range inputs return LONG_MIN with FE_INVALID.
  */
 static const struct LrintF64Data LrintF64Cases[] = {
-    /* input            out          excepts */
+    /* m_in             m_out        m_excepts */
     { D_POS_ZERO,       0L,          0 },
     { D_NEG_ZERO,       0L,          0 },
     { D_ONE,            1L,          0 },
@@ -164,7 +164,7 @@ static const struct LrintF64Data LrintF64Cases[] = {
  * large-magnitude inputs that overflow long on 32-bit platforms.
  */
 static const struct LlrintF64Data LlrintF64Cases[] = {
-    /* input               out                       excepts */
+    /* m_in                m_out                     m_excepts */
     { D_POS_ZERO,          0LL,                      0 },
     { D_NEG_ZERO,          0LL,                      0 },
     { D_ONE,               1LL,                      0 },
@@ -198,7 +198,7 @@ static const struct LlrintF64Data LlrintF64Cases[] = {
  * lrintf(float): results fit in long on both 32-bit and 64-bit platforms.
  */
 static const struct LrintF32Data LrintF32Cases[] = {
-    /* input            out          excepts */
+    /* m_in             m_out        m_excepts */
     { F_POS_ZERO,       0L,          0 },
     { F_NEG_ZERO,       0L,          0 },
     { F_ONE,            1L,          0 },
@@ -225,7 +225,7 @@ static const struct LrintF32Data LrintF32Cases[] = {
  * llrintf(float): test cases covering long long range.
  */
 static const struct LlrintF32Data LlrintF32Cases[] = {
-    /* input               out                       excepts */
+    /* m_in                m_out                     m_excepts */
     { F_POS_ZERO,          0LL,                      0 },
     { F_NEG_ZERO,          0LL,                      0 },
     { F_ONE,               1LL,                      0 },
