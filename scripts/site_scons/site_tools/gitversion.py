@@ -74,16 +74,10 @@ static const char VERSION_STRING[] = "%s";
 static const char GIT_COMMIT_STRING[] = "git:%s";
 
 static const char* alm_get_build(void);
-static const char* alm_get_commit(void);
 
 static const char* alm_get_build(void)
 {
         return VERSION_STRING;
-}
-
-static const char* alm_get_commit(void)
-{
-        return GIT_COMMIT_STRING;
 }
 """
 
