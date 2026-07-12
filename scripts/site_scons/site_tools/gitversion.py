@@ -89,17 +89,19 @@ def GetBuildDateTime():
 
     return build_data_time
 
-def get_git_commit_hash():
+def get_git_commit_hash(env):
     """Return the current HEAD commit hash, or 'unknown' if git is unavailable."""
     try:
-        p = subprocess.Popen(
-            ['git', 'rev-parse', 'HEAD'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )
+        kw = {
+            'stdin': 'devnull',
+            'stdout': subprocess.PIPE,
+            'stderr': subprocess.PIPE,
+            'universal_newlines': True,
+            'cwd': env.Dir('#').abspath,
+        }
+        p = SCons.Action._subproc(env, ['git', 'rev-parse', 'HEAD'], **kw)
         out, _ = p.communicate()
-        if p.returncode == 0:
+        if p.wait() == 0:
             return out.strip()
     except OSError:
         pass
@@ -108,7 +110,7 @@ def get_git_commit_hash():
 def generate_version(env, target):
     """Generate the version file with the current version in it"""
     version = "Build {0}".format(GetBuildDateTime())
-    commit = get_git_commit_hash()
+    commit = get_git_commit_hash(env)
     contents = __amd_libm_version_template % (version, commit)
 
     fd = open(target, 'w')
