@@ -71,12 +71,19 @@ __amd_libm_version_template="""/*
 */
 
 static const char VERSION_STRING[] = "%s";
+static const char GIT_COMMIT_STRING[] = "git:%s";
 
 static const char* alm_get_build(void);
+static const char* alm_get_commit(void);
 
 static const char* alm_get_build(void)
 {
         return VERSION_STRING;
+}
+
+static const char* alm_get_commit(void)
+{
+        return GIT_COMMIT_STRING;
 }
 """
 
@@ -88,12 +95,27 @@ def GetBuildDateTime():
 
     return build_data_time
 
+def get_git_commit_hash():
+    """Return the current HEAD commit hash, or 'unknown' if git is unavailable."""
+    try:
+        p = subprocess.Popen(
+            ['git', 'rev-parse', 'HEAD'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+        out, _ = p.communicate()
+        if p.returncode == 0:
+            return out.strip()
+    except OSError:
+        pass
+    return 'unknown'
+
 def generate_version(env, target):
     """Generate the version file with the current version in it"""
-    #print("generate_version", "target:", target, "env:", env)
-    #version = get_git_version(env)
     version = "Build {0}".format(GetBuildDateTime())
-    contents = __amd_libm_version_template % (version)
+    commit = get_git_commit_hash()
+    contents = __amd_libm_version_template % (version, commit)
 
     fd = open(target, 'w')
     fd.write(contents)
