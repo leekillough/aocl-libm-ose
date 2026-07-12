@@ -32,13 +32,14 @@
 // DO NOT EDIT
 // Autogeneration input file, manually editing is not recommended
 //
-static const char VERSION_STRING[] = "@LIBALM_VERSION_STRING@";
-static const char GIT_COMMIT_STRING[] = "git:@GIT_COMMIT_HASH@";
+static const volatile char VERSION_STRING[] = "@LIBALM_VERSION_STRING@";
+static const volatile char GIT_COMMIT_STRING[] = "git:@GIT_COMMIT_HASH@";
 
 static const char* alm_get_build(void);
 
 static const char* alm_get_build(void)
 {
+        (void)GIT_COMMIT_STRING;
         return VERSION_STRING;
 }
 
