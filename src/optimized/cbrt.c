@@ -150,13 +150,15 @@ ALM_PROTO_OPT(cbrt)(double x) {
             flt64_t midx = { .u = mant_idx | EXP_VAL_52_DP64 };
             flt64_t mant = { .u = InverseTable[mant_idx - 256] };
 
+            /* idx_frac = mant_idx/512 exactly: integer * 2^-9, no rounding. */
+            double idx_frac = (midx.d - 0x1p52) * ONE_BY_512;
             /*
-             * r = mant * (rdu - mant_idx/512).  FMA form avoids rounding the
-             * inner subtraction before the outer multiply: computes
-             * mant*rdu - mant*(mant_idx/512) with one final rounding.
+             * r = mant * (rdu - idx_frac).  The subtraction is exact (both
+             * operands are exactly representable doubles and their difference
+             * fits in 52 bits), so FMA buys no accuracy here and costs an
+             * extra vmulsd on Zen 5.
              */
-            double idx_frac = (midx.d - 0x1p52) * ONE_BY_512; /* exact: 2^-9 * integer */
-            double r = fma(rdu.d, mant.d, -(idx_frac * mant.d));
+            double r = mant.d * (rdu.d - idx_frac);
 
             /*
              * Degree-6 polynomial: c1*r + c2*r^2 + ... + c6*r^6.
