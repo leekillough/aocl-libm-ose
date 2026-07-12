@@ -33,7 +33,11 @@
 // Autogeneration input file, manually editing is not recommended
 //
 static const char VERSION_STRING[] = "@LIBALM_VERSION_STRING@";
+#if defined(__GNUC__) || defined(__clang__)
 static const char GIT_COMMIT_STRING[] __attribute__((used)) = "git:@GIT_COMMIT_HASH@";
+#else
+static const char GIT_COMMIT_STRING[] = "git:@GIT_COMMIT_HASH@";
+#endif
 
 static const char* alm_get_build(void);
 
