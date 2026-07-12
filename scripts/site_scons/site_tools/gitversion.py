@@ -70,15 +70,14 @@ __amd_libm_version_template="""/*
 * DO NOT EDIT!
 */
 
-static const volatile char VERSION_STRING[] = "%s";
-static const volatile char GIT_COMMIT_STRING[] __attribute__((used)) = "git:%s";
+static const char VERSION_STRING[] = "%s";
+static const char GIT_COMMIT_STRING[] __attribute__((used)) = "git:%s";
 
 static const char* alm_get_build(void);
 
 static const char* alm_get_build(void)
 {
-        (void)GIT_COMMIT_STRING;
-        return (const char*)VERSION_STRING;
+        return VERSION_STRING;
 }
 """
 
