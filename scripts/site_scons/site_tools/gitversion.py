@@ -71,7 +71,7 @@ __amd_libm_version_template="""/*
 */
 
 static const char VERSION_STRING[] = "%s";
-static const char GIT_COMMIT_STRING[] = "git:%s";
+static const char GIT_COMMIT_STRING[] __attribute__((used)) = "git:%s";
 
 static const char* alm_get_build(void);
 
