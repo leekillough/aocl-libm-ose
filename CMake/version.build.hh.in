@@ -37,6 +37,7 @@ static const char VERSION_STRING[] = "@LIBALM_VERSION_STRING@";
 static const char GIT_COMMIT_STRING[] __attribute__((used)) = "git:@GIT_COMMIT_HASH@";
 #else
 static const char GIT_COMMIT_STRING[] = "git:@GIT_COMMIT_HASH@";
+#pragma comment(linker, "/INCLUDE:GIT_COMMIT_STRING")
 #endif
 
 static const char* alm_get_build(void);

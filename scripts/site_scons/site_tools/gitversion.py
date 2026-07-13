@@ -51,7 +51,7 @@ def get_git_version(env):
         }
         p = SCons.Action._subproc(env, ['git', 'describe', '--dirty= (modified)', '--always'], **kw)
         out,err = p.communicate()
-        status = p.wait()
+        status = p.returncode
         if err:
             sys.stderr.write(unicode(err))
 
@@ -75,6 +75,7 @@ static const char VERSION_STRING[] = "%s";
 static const char GIT_COMMIT_STRING[] __attribute__((used)) = "git:%s";
 #else
 static const char GIT_COMMIT_STRING[] = "git:%s";
+#pragma comment(linker, "/INCLUDE:GIT_COMMIT_STRING")
 #endif
 
 static const char* alm_get_build(void);
@@ -105,7 +106,7 @@ def get_git_commit_hash(env):
         }
         p = SCons.Action._subproc(env, ['git', 'rev-parse', 'HEAD'], **kw)
         out, _ = p.communicate()
-        if p.wait() == 0:
+        if p.returncode == 0:
             return out.strip()
     except OSError:
         pass
