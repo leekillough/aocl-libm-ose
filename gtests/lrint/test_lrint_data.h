@@ -151,6 +151,10 @@ static const struct LrintF64Data LrintF64Cases[] = {
     { D_NEG_2P5,       -2L,          0 },   /* -2.5 -> -2 (even) */
     { D_POS_4P5,        4L,          0 },   /* 4.5 -> 4 (even) */
     { D_NEG_4P5,       -4L,          0 },   /* -4.5 -> -4 (even) */
+#if LONG_MAX > 0x7fffffffL
+    /* -2^63 = LONG_MIN on LP64: valid, no exception */
+    { D_NEG_2P63,       LONG_MIN,    0 },
+#endif
     /* NaN and Inf: FE_INVALID, return LONG_MIN */
     { D_QNAN,           LONG_MIN,    FE_INVALID },
     { D_NEG_QNAN,       LONG_MIN,    FE_INVALID },
@@ -214,6 +218,10 @@ static const struct LrintF32Data LrintF32Cases[] = {
     { F_NEG_4P5,       -4L,          0 },
     /* 2^23: exact integral float, fits in long everywhere */
     { F_2P23,           8388608L,    0 },
+#if LONG_MAX > 0x7fffffffL
+    /* -2^63 = LONG_MIN on LP64: valid, no exception */
+    { F_NEG_2P63,       LONG_MIN,    0 },
+#endif
     /* NaN and Inf: FE_INVALID, return LONG_MIN */
     { F_QNAN,           LONG_MIN,    FE_INVALID },
     { F_SNAN,           LONG_MIN,    FE_INVALID },

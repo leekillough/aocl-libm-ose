@@ -28,6 +28,7 @@
 #include "libm_util_amd.h"
 #include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <libm/compiler.h>
 #include <limits.h>
 #if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
 #include <emmintrin.h>
@@ -39,7 +40,13 @@ long ALM_PROTO_REF(lrintf)(float x)
 
 #if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
 #if LONG_MAX > 0x7fffffffL
-    result = (long)_mm_cvtss_si64(_mm_set_ss(x));
+    /* CVTSS2SI raises FE_INVALID for -2^63 (= LONG_MIN) on some x86 CPUs, even
+     * though it is exactly representable as long. */
+    if (unlikely(x == -0x1p63f)) {
+        result = LONG_MIN;
+    } else {
+        result = (long)_mm_cvtss_si64(_mm_set_ss(x));
+    }
 #else
     result = (long)_mm_cvtss_si32(_mm_set_ss(x));
 #endif
