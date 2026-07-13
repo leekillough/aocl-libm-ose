@@ -30,6 +30,11 @@
 #include <libm/compiler.h>
 #include <libm/iface.h>
 #include <libm/entry_pt.h>
+#include "version.build.h"
+
+const char alm_git_commit_id[] = AOCL_LIBM_GIT_COMMIT_ID;
+
+const char* alm_get_git_commit(void) { return alm_git_commit_id; }
 
 #ifdef __cplusplus
 extern "C"
