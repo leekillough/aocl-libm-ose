@@ -145,7 +145,8 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
     } else {
         // Reconstruct |x| and |y| as floats.  IEEE 754 nonnegative floats are
         // monotone in their integer representation, so ax <= ay iff |x| <= |y|.
-        float fax, fay;
+        float fax;
+        float fay;
         memcpy(&fax, &ax, sizeof(fax));
         memcpy(&fay, &ay, sizeof(fay));
 
