@@ -42,7 +42,7 @@ long ALM_PROTO_REF(lrint)(double x)
 #if LONG_MAX > 0x7fffffffL
     /* CVTSD2SI raises FE_INVALID for -2^63 (= LONG_MIN) on some x86 CPUs, even
      * though it is exactly representable as long. */
-    if (unlikely(x == -0x1p63)) {
+    if (unlikely(x == (double)LONG_MIN)) {
         result = LONG_MIN;
     } else {
         result = (long)_mm_cvtsd_si64(_mm_set_sd(x));
@@ -59,10 +59,10 @@ long ALM_PROTO_REF(lrint)(double x)
 #if LONG_MAX > 0x7fffffffL
         /* LP64: exact integers in [2^52, 2^63) are in-range; cast directly.
            Biased-exponent bit-pattern for 2^63: */
-        static const uint64_t Ovf64 = (uint64_t)(63 + 1023) << 52;
-        if (absbits >= 0x7FF0000000000000ULL ||    /* NaN or Inf */
-            absbits > Ovf64 ||                     /* |x| > 2^63 */
-            (absbits == Ovf64 && !(checkbits.u64 & SIGNBIT_DP64))) { /* x = +2^63 */
+        static const uint64_t Ovf64 = (uint64_t)(63 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
+        if ((absbits >= 0x7FF0000000000000ULL) ||    /* NaN or Inf */
+            (absbits > Ovf64) ||                     /* |x| > 2^63 */
+            ((absbits == Ovf64) && !(checkbits.u64 & SIGNBIT_DP64))) { /* x = +2^63 */
             __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
             result = LONG_MIN;
         } else {
@@ -81,7 +81,7 @@ long ALM_PROTO_REF(lrint)(double x)
            FE_TONEAREST / FE_TOWARDZERO / FE_UPWARD and must NOT raise FE_INVALID. */
         UT64 val_2p52 = { .u64 = (checkbits.u64 & SIGNBIT_DP64) | EXP_VAL_52_DP64 };
         double rx = (x + val_2p52.f64) - val_2p52.f64;
-        if (unlikely(rx > (double)LONG_MAX || rx < (double)LONG_MIN)) {
+        if (unlikely((rx > (double)LONG_MAX) || (rx < (double)LONG_MIN))) {
             __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
             result = LONG_MIN;
         } else {

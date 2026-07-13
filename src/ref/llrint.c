@@ -43,14 +43,14 @@ long long ALM_PROTO_REF(llrint)(double x)
     /* CVTSD2SI raises FE_INVALID for -2^63 (= LLONG_MIN), even though it is
      * exactly representable as long long.  Handle it on an unlikely() branch
      * so the common case is a single cvtsd2si instruction with no overhead. */
-    if (unlikely(x == -0x1p63)) {
+    if (unlikely(x == (double)LLONG_MIN)) {
         result = LLONG_MIN;
     } else {
         result = _mm_cvtsd_si64(_mm_set_sd(x));
     }
 #else
     /* Threshold: 2^63, the long long overflow boundary as a double bit-pattern (0x43E0000000000000). */
-    static const uint64_t OvfThreshold = (uint64_t)(63 + 1023) << 52;
+    static const uint64_t OvfThreshold = (uint64_t)(63 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
 
     UT64 checkbits = { .f64 = x };
     uint64_t absbits = checkbits.u64 & POS_BITSET_DP64;
