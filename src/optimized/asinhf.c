@@ -120,11 +120,15 @@ ALM_PROTO_OPT(asinhf)(float x)
 
     /* inf or NaN: x+x propagates NaN and returns +/-inf unchanged */
     if (unlikely(ax >= PINFBITPATT_SP32))
+    {
         return x + x;
+    }
 
     /* Tiny: |x| < 2^-12; asinhf(x) rounds to x */
     if (unlikely(ax < ASINHF_TINY_THRESHOLD))
+    {
         return x;
+    }
 
     /* Small-x path: |x| <= 1.094f */
     if (ax <= ASINHF_SMALL_LIMIT) {
