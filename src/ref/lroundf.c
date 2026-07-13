@@ -57,7 +57,7 @@
  */
 #define LROUNDF_MIN  ((float)LONG_MIN - 0.5f)  /* rounds to (float)LONG_MIN */
 #define LROUNDF_MAX  ((float)LONG_MAX + 0.5f)  /* rounds to 2^(N-1) */
-#define LROUNDF_INRANGE(x) ((x) >= LROUNDF_MIN && (x) < LROUNDF_MAX)
+#define LROUNDF_INRANGE(x) (((x) >= LROUNDF_MIN) && ((x) < LROUNDF_MAX))
 
 /* 2^23 as a float bit-pattern: floats with |x| >= 2^23 are exact integers. */
 #define LROUNDF_INT_BITS    0x4B000000U

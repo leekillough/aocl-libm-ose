@@ -45,7 +45,7 @@
  */
 #define LLROUND_MIN       ((double)LLONG_MIN - 0.5)   /* rounds to -2^63 = LLONG_MIN */
 #define LLROUND_MAX       ((double)LLONG_MAX + 0.5)   /* rounds to 2^63 (overflows) */
-#define LLROUND_INRANGE(x) ((x) >= LLROUND_MIN && (x) < LLROUND_MAX)
+#define LLROUND_INRANGE(x) (((x) >= LLROUND_MIN) && ((x) < LLROUND_MAX))
 
 /* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are already exact integers. */
 #define LLROUND_INT_BITS   0x4330000000000000ULL
