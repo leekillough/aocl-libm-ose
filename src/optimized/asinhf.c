@@ -124,10 +124,16 @@ ALM_PROTO_OPT(asinhf)(float x)
         return x + x;
     }
 
-    /* Tiny: |x| < 2^-12; asinhf(x) rounds to x */
+    /* Tiny: |x| < 2^-12; asinhf(x) rounds to x, raising underflow+inexact */
     if (unlikely(ax < ASINHF_TINY_THRESHOLD))
     {
+        if (ax == 0)
+            return x;
+#ifdef WINDOWS
         return x;
+#else
+        return __alm_handle_errorf(ux, AMD_F_UNDERFLOW | AMD_F_INEXACT);
+#endif
     }
 
     /* Small-x path: |x| <= 1.094f */
