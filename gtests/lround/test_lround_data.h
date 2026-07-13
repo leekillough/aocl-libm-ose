@@ -148,6 +148,8 @@ static const struct LroundF64Data LroundF64Cases[] = {
     { R_D_NEG_2P5,      -3L,          0 },   /* -2.5 -> -3 */
     { R_D_POS_4P5,       5L,          0 },   /* +4.5 -> 5 */
     { R_D_NEG_4P5,      -5L,          0 },   /* -4.5 -> -5 */
+    /* finite overflow (+2^63 > LONG_MAX on all platforms): FE_INVALID */
+    { R_D_2P63,          LONG_MIN,    FE_INVALID },
     /* NaN and Inf: FE_INVALID, return LONG_MIN */
     { R_D_QNAN,          LONG_MIN,    FE_INVALID },
     { R_D_SNAN,          LONG_MIN,    FE_INVALID },
@@ -210,6 +212,8 @@ static const struct LroundF32Data LroundF32Cases[] = {
     { R_F_NEG_4P5,      -5L,          0 },
     /* 2^23: exact integral float, fits in long everywhere */
     { R_F_2P23,          8388608L,    0 },
+    /* finite overflow (+2^63 > LONG_MAX on all platforms): FE_INVALID */
+    { R_F_2P63,          LONG_MIN,    FE_INVALID },
     /* NaN and Inf: FE_INVALID, return LONG_MIN */
     { R_F_QNAN,          LONG_MIN,    FE_INVALID },
     { R_F_SNAN,          LONG_MIN,    FE_INVALID },

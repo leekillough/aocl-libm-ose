@@ -60,11 +60,11 @@
 #if LONG_MAX == 0x7fffffff
 #define LROUND_MIN    ((double)LONG_MIN - 0.5)    /* -(2^31+0.5), exact */
 #define LROUND_MAX    ((double)LONG_MAX + 0.5)    /* 2^31-0.5, exact */
-#define LROUND_INRANGE(x)  ((x) > LROUND_MIN && (x) < LROUND_MAX)
+#define LROUND_INRANGE(x)  (((x) > LROUND_MIN) && ((x) < LROUND_MAX))
 #else
 #define LROUND_MIN    ((double)LONG_MIN - 0.5)    /* rounds to -2^63 = LONG_MIN */
 #define LROUND_MAX    ((double)LONG_MAX + 0.5)    /* rounds to 2^63 (overflows) */
-#define LROUND_INRANGE(x)  ((x) >= LROUND_MIN && (x) < LROUND_MAX)
+#define LROUND_INRANGE(x)  (((x) >= LROUND_MIN) && ((x) < LROUND_MAX))
 #endif
 
 /* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are exact integers. */
