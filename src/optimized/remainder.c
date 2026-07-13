@@ -184,9 +184,10 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
             } else {
                 // d > 52: multi-step 24-bit chunk reduction.
                 // Each step reduces adx mod (w) where w = ady * 2^(24*nsteps).
-                // We use (uint64_t)(adx/w) to get the exact integer quotient (fits in
-                // 24 bits by construction).  scalbn is used instead of bit-manipulation
-                // so that subnormal ady is handled correctly.
+                // The mathematical quotient adx/w fits in 24 bits, but IEEE 754
+                // division may round up; the qw > adx guard corrects any overshoot.
+                // scalbn is used instead of bit-manipulation so that subnormal ady
+                // is handled correctly.
                 int32_t nsteps = d / 24;
                 // asdouble(ay + ...) is safe only for normal ady (subnormal ady has
                 // biased exponent field 0 so adding overflows into the mantissa bits).
@@ -195,7 +196,9 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
                     : scalbn(ady, 24 * nsteps);
                 for (int32_t i = 0; i < nsteps; i++) {
                     uint64_t q = (uint64_t)(adx / w);
-                    adx -= (double)q * w;
+                    double qw = (double)q * w;
+                    if (qw > adx) { --q; qw -= w; }
+                    adx -= qw;
                     w *= 0x1p-24;  // 2^-24
                 }
                 double half_ady = ady * 0x1p-1;
