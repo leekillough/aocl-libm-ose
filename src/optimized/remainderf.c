@@ -51,7 +51,7 @@
 //
 //   Single-precision path (ax > ay, exponent diff <= ~24):
 //     n = RneF(ax/ay): vroundss imm=8 (SSE4.1, rounding-mode independent) or
-//     trunc(q+0.5) fallback.  r = ax - n*ay via vfnmadd231ss.
+//     round(q) fallback.  r = ax - n*ay via vfnmadd231ss.
 //     If r in [0, ay/2): result is exact, return immediately.
 //     Otherwise (r < 0, r in [ay/2, ay), or r >= ay): fall back to double.
 //
@@ -80,7 +80,7 @@
 
 // RneF / RneD: round q to nearest integer, q nonnegative at every call site.
 // SSE4.1 path: vroundss/vroundsd imm=8 -- nearest-even, rounding-mode independent.
-// Non-SSE4.1 path: trunc(q+0.5) = round-half-away-from-zero (not nearest-even).
+// Non-SSE4.1 path: round(q) = round-half-away-from-zero (not nearest-even).
 //   Half-integer ties that land on the wrong side are corrected at each call site
 //   with: if (r + r == -ady && (int64_t)n & 1) r += ady;
 
@@ -100,12 +100,10 @@ static inline double RneD(double q) {
 
 #else // __SSE4_1__
 
-// Without SSE4.1: trunc(q + 0.5) is identical to round(q) for nonnegative q
-// (both are round-half-away-from-zero) but compiles to two instructions
-// (add + trunc) instead of four, because the sign-handling overhead that
-// round()/roundf() carries drops out when q is known to be nonnegative.
-static inline float  RneF(float  q) { return truncf(q + 0.5f); }
-static inline double RneD(double q) { return trunc(q + 0.5); }
+// Without SSE4.1: round(q) is round-half-away-from-zero, rounding-mode independent.
+// q is nonnegative at every call site.
+static inline float  RneF(float  q) { return roundf(q); }
+static inline double RneD(double q) { return round(q); }
 
 #endif // __SSE4_1__
 
@@ -152,7 +150,8 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
         memcpy(&fay, &ay, sizeof(fay));
 
         // Fast path: |x| <= |y|.  n is 0 or 1; no division needed.
-        // 2*fax is exact (no overflow: ax < 0x7f800000).
+        // 2*fax may overflow to +Inf for large finite fax; even then,
+        // the ax2 > fay comparison remains correct for finite fay.
         // fax - fay is exact by Sterbenz (fay/2 < fax <= fay for n=1 case).
         if (likely(ax <= ay)) {
             float ax2 = fax + fax;
@@ -165,7 +164,7 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
         } else {
             // |x| > |y|.  Attempt single-precision reduction first.
             // RneF rounds q to the nearest-even integer, rounding-mode independently,
-            // via vroundss imm=8 (SSE4.1) or trunc(q+0.5) (fallback, nonneg q).
+            // via vroundss imm=8 (SSE4.1) or round() (fallback, nonneg q).
             // The compiler emits vdivss + round + vfnmadd231ss in XMM registers.
             //
             // r_f can be negative when RneF rounds up (fractional part > 0.5, or a
