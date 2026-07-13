@@ -71,19 +71,11 @@ __amd_libm_version_template="""/*
 */
 
 static const char VERSION_STRING[] = "%s";
-#if defined(__GNUC__) || defined(__clang__)
-static const char GIT_COMMIT_STRING[] __attribute__((used)) = "git:%s";
-#else
-static const char GIT_COMMIT_STRING[] = "git:%s";
-#pragma comment(linker, "/INCLUDE:GIT_COMMIT_STRING")
-#endif
+#define AOCL_LIBM_GIT_COMMIT_ID "git:%s"
+extern const char alm_git_commit_id[];
 
-static const char* alm_get_build(void);
-
-static const char* alm_get_build(void)
-{
-        return VERSION_STRING;
-}
+const char* alm_get_git_commit(void);
+const char* alm_get_build(void);
 """
 
 
@@ -116,7 +108,7 @@ def generate_version(env, target):
     """Generate the version file with the current version in it"""
     version = "Build {0}".format(GetBuildDateTime())
     commit = get_git_commit_hash(env)
-    contents = __amd_libm_version_template % (version, commit, commit)
+    contents = __amd_libm_version_template % (version, commit)
 
     fd = open(target, 'w')
     fd.write(contents)
