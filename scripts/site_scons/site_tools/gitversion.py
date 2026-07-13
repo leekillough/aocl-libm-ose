@@ -115,7 +115,7 @@ def generate_version(env, target):
     """Generate the version file with the current version in it"""
     version = "Build {0}".format(GetBuildDateTime())
     commit = get_git_commit_hash(env)
-    contents = __amd_libm_version_template % (version, commit)
+    contents = __amd_libm_version_template % (version, commit, commit)
 
     fd = open(target, 'w')
     fd.write(contents)
