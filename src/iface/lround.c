@@ -31,6 +31,11 @@
 #include <libm/entry_pt.h>
 #include <libm/arch/all.h>
 
+/*
+ * lround/lroundf have no architecture-optimized implementations; all variants
+ * dispatch to the REF implementations.  The REF path is already branchless
+ * for normal inputs and there are no uarch-specific variants to select.
+ */
 static const
 struct alm_arch_funcs __arch_funcs_lround = {
     .def_arch = ALM_UARCH_VER_DEFAULT,

@@ -51,7 +51,7 @@
 #define LLROUND_INT_BITS   0x4330000000000000ULL
 
 /* long long is in the definition of the llround API, and is not chosen for its size */
-long long ALM_PROTO_REF(llround)(const double x)
+long long ALM_PROTO_REF(llround)(double x)
 {
     long long result = 0;
 
