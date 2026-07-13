@@ -174,12 +174,12 @@ test_tan_conformance_data[] = {
     {POS_INF_F64,  POS_QNAN_F64, FE_INVALID},
     {NEG_INF_F64,  NEG_QNAN_F64, FE_INVALID},
 
-    {0x3ff921fb55206ddf, 0xc1b298c76953389f, FE_INEXACT}, //tan(pi/2)= +inf
-    {0xbff921fb55206ddf, 0x41b298c76953389f, FE_INEXACT}, //tan(-90)=-tan(90)=-INF
-    {0x3fe921fb544486e0, 0x3ff00000000059c8, 0},          //tan(45)
-    {0xbfe921fb544486e0, 0xbff00000000059c8, 0},          //tan(-45)=-1
-    {POS_PI_F64,         0xbca1a62633145c07, 0},         //tan(pi)=0
-    {NEG_PI_F64,         0x3ca1a62633145c07, 0},         //tan(-pi)=-0
+    {0x3ff921fb55206ddf, 0xc1b298c76953389f, FE_INEXACT}, // tan(approx +pi/2): large negative finite (constant is not exactly pi/2)
+    {0xbff921fb55206ddf, 0x41b298c76953389f, FE_INEXACT}, // tan(approx -pi/2): large positive finite (constant is not exactly -pi/2)
+    {0x3fe921fb544486e0, 0x3ff00000000059c8, 0},          // tan(approx +pi/4): ~1 (constant is not exactly pi/4)
+    {0xbfe921fb544486e0, 0xbff00000000059c8, 0},          // tan(approx -pi/4): ~-1 (constant is not exactly -pi/4)
+    {POS_PI_F64,         0xbca1a62633145c07, 0},         // tan(POS_PI_F64): tiny negative non-zero (POS_PI_F64 is not exactly pi)
+    {NEG_PI_F64,         0x3ca1a62633145c07, 0},         // tan(NEG_PI_F64): tiny positive non-zero (NEG_PI_F64 is not exactly -pi)
 
     {0x000000000000023D, 0x000000000000023D, FE_UNDERFLOW},
     {0x4f6344a970d9ac13, 0x3fe9b03b3afff843, 0},
