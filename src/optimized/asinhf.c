@@ -129,7 +129,7 @@ ALM_PROTO_OPT(asinhf)(float x)
     {
         if (ax == 0)
             return x;
-#ifdef WINDOWS
+#ifdef WIN32
         return x;
 #else
         return __alm_handle_errorf(ux, AMD_F_UNDERFLOW | AMD_F_INEXACT);
