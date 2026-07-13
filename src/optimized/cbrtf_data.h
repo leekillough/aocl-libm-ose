@@ -262,10 +262,9 @@ static const double DoubleReciprocalTable[256] = {
  * some entries have been nudged by a small number of double ULPs from their
  * mathematically exact values by cbrtf_table_opt to minimize the number of
  * 1-ULP rounding errors across all 2^32 float inputs.  As a result, a small
- * number of adjacent entries are non-monotonic (e.g., indices 140-141,
- * 146-147, and the duplicate at 151-152).  This is intentional and correct;
- * monotonicity is not required for accuracy because each input maps to
- * exactly one index.
+ * number of adjacent entries are non-monotonic or duplicated.  This is
+ * intentional and correct; monotonicity is not required for accuracy because
+ * each input maps to exactly one index.
  */
 static const double CubeRootTable[256] = {
 0x1.fffffffff09c7p-1,
