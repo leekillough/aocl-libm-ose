@@ -93,7 +93,8 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                     adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
 
                     /* Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady */
-                    if (adx < 0) {
+                    if (adx < 0)
+                    {
                         adx += ady;
                     }
                 }
