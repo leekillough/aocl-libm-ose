@@ -51,7 +51,7 @@ def get_git_version(env):
         }
         p = SCons.Action._subproc(env, ['git', 'describe', '--dirty= (modified)', '--always'], **kw)
         out,err = p.communicate()
-        status = p.wait()
+        status = p.returncode
         if err:
             sys.stderr.write(unicode(err))
 
@@ -71,6 +71,12 @@ __amd_libm_version_template="""/*
 */
 
 static const char VERSION_STRING[] = "%s";
+#if defined(__GNUC__) || defined(__clang__)
+static const char GIT_COMMIT_STRING[] __attribute__((used)) = "git:%s";
+#else
+static const char GIT_COMMIT_STRING[] = "git:%s";
+#pragma comment(linker, "/INCLUDE:GIT_COMMIT_STRING")
+#endif
 
 static const char* alm_get_build(void);
 
@@ -88,12 +94,29 @@ def GetBuildDateTime():
 
     return build_data_time
 
+def get_git_commit_hash(env):
+    """Return the current HEAD commit hash, or 'unknown' if git is unavailable."""
+    try:
+        kw = {
+            'stdin': 'devnull',
+            'stdout': subprocess.PIPE,
+            'stderr': subprocess.PIPE,
+            'universal_newlines': True,
+            'cwd': env.Dir('#').abspath,
+        }
+        p = SCons.Action._subproc(env, ['git', 'rev-parse', 'HEAD'], **kw)
+        out, _ = p.communicate()
+        if p.returncode == 0:
+            return out.strip()
+    except OSError:
+        pass
+    return 'unknown'
+
 def generate_version(env, target):
     """Generate the version file with the current version in it"""
-    #print("generate_version", "target:", target, "env:", env)
-    #version = get_git_version(env)
     version = "Build {0}".format(GetBuildDateTime())
-    contents = __amd_libm_version_template % (version)
+    commit = get_git_commit_hash(env)
+    contents = __amd_libm_version_template % (version, commit, commit)
 
     fd = open(target, 'w')
     fd.write(contents)
