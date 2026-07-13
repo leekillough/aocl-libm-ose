@@ -81,7 +81,11 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             uint64_t ay = asuint64((double) y) & POS_BITSET_DP64;
             if (ax >= ay)
             {
-                /* quo = floor(log2( |x|/|y| ) / 24 ) */
+                /* FMODF_CHUNK_EXP = 24*2^52, so (ax-ay)/FMODF_CHUNK_EXP == (xe-ye)/24:
+                 * ax-ay = (xe-ye)*2^52 + mantissa_delta, |mantissa_delta| < 2^52,
+                 * and dividing by 24*2^52 truncates the fractional part.  ax>=ay
+                 * (checked above) guarantees xe>=ye and that ax-ay cannot wrap in
+                 * uint64_t since sign bits are cleared so both ax,ay < 2^63. */
                 uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
                 double   adx = asdouble(ax);
                 do
