@@ -75,13 +75,7 @@ static const char VERSION_STRING[] = "%s";
 extern const char alm_git_commit_id[];
 
 const char* alm_get_git_commit(void);
-
-static const char* alm_get_build(void);
-
-static const char* alm_get_build(void)
-{
-        return VERSION_STRING;
-}
+const char* alm_get_build(void);
 """
 
 
