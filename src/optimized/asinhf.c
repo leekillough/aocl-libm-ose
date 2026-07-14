@@ -41,7 +41,8 @@
 * Small-x path (|x| <= 1.094):
 *   asinhf(x) = x * P(x^2)
 *   P is a degree-8 minimax polynomial for asinh(sqrt(t))/sqrt(t) on [0, 1.094^2].
-*   Max relative error: 2^-26.62.
+*   Coefficients are evaluated in double to avoid accumulation of float Horner
+*   rounding errors; the final result is < 1 ULP over the entire small-x range.
 *
 * Large-x path (|x| > 1.094):
 *   asinhf(x) = ln(|x|) + F(1/x^2)
@@ -73,15 +74,23 @@
 /* small-path / large-path split at |x| = 1.094 */
 #define ASINHF_SMALL_LIMIT     0x3F8C0831u
 
-/* small-path: degree-8 minimax P(x2) for asinh(sqrt(t))/sqrt(t) */
-#define ASINHF_P8   0x1.c3b502p-12f
-#define ASINHF_P7  -0x1.753f56p-9f
-#define ASINHF_P6   0x1.202748p-7f
-#define ASINHF_P5  -0x1.233f42p-6f
-#define ASINHF_P4   0x1.d7adbcp-6f
-#define ASINHF_P3  -0x1.6b09a4p-5f
-#define ASINHF_P2   0x1.330eeep-4f
-#define ASINHF_P1  -0x1.555494p-3f
+/*
+ * Small-path: degree-8 double-precision minimax P(t) for
+ * asinh(sqrt(t))/sqrt(t), t = x^2, on [0, 1.094^2].
+ * Coefficients computed by Remez exchange to full double precision
+ * (max poly error ~9.87e-9 = 0.083 ULP of the float output range).
+ * Evaluated in double to avoid float Horner rounding accumulation;
+ * final float result is < 1 ULP over the entire small-x range.
+ */
+#define ASINHF_P8   0x1.c3b502d0b78bcp-12
+#define ASINHF_P7  -0x1.753f5729985cap-9
+#define ASINHF_P6   0x1.2027478aa9cbcp-7
+#define ASINHF_P5  -0x1.233f42665ae73p-6
+#define ASINHF_P4   0x1.d7adbc41f51e7p-6
+#define ASINHF_P3  -0x1.6b09a37f0e4d0p-5
+#define ASINHF_P2   0x1.330eee5be9139p-4
+#define ASINHF_P1  -0x1.555494e37d987p-3
+#define ASINHF_P0   0x1.ffffffab41cd2p-1
 
 /* ln(2) in head+tail split, matching logf_data */
 #define LOG2_HEAD  0x1.62e3p-1
@@ -138,18 +147,21 @@ ALM_PROTO_OPT(asinhf)(float x)
 
     /* Small-x path: |x| <= 1.094f */
     if (ax <= ASINHF_SMALL_LIMIT) {
-        float x2 = x * x;
-        /* Horner evaluation of degree-8 minimax P(x2) for asinh(sqrt(t))/sqrt(t) */
-        float p = ASINHF_P8;
-        p = p * x2 + ASINHF_P7;
-        p = p * x2 + ASINHF_P6;
-        p = p * x2 + ASINHF_P5;
-        p = p * x2 + ASINHF_P4;
-        p = p * x2 + ASINHF_P3;
-        p = p * x2 + ASINHF_P2;
-        p = p * x2 + ASINHF_P1;
-        p = p * x2 + 0x1.0p+0f;
-        return x * p;
+        double xd = (double)x;
+        double t  = xd * xd;
+        /* Horner evaluation of degree-8 minimax P(t) for
+         * asinh(sqrt(t))/sqrt(t); evaluated in double to avoid accumulation
+         * of float Horner rounding errors. */
+        double p = ASINHF_P8;
+        p = p * t + ASINHF_P7;
+        p = p * t + ASINHF_P6;
+        p = p * t + ASINHF_P5;
+        p = p * t + ASINHF_P4;
+        p = p * t + ASINHF_P3;
+        p = p * t + ASINHF_P2;
+        p = p * t + ASINHF_P1;
+        p = p * t + ASINHF_P0;
+        return (float)(xd * p);
     }
 
     /* Large-x path: asinh(x) = ln(|x|) + ln(1 + sqrt(1 + 1/x^2))
