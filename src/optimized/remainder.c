@@ -64,8 +64,11 @@
 //   remainder(x, Inf) -> x             (finite x)
 //   remainder(0,   y) -> 0             (sign preserved)
 
+#pragma STDC FENV_ACCESS ON
+
 #include <stdint.h>
 #include <math.h>
+#include <fenv.h>
 #include <float.h>
 
 #include "libm_macros.h"
@@ -161,6 +164,10 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
                        : (ix & UINT64_C(0x8000000000000000)) ? -r : r;
             }
         } else {
+            // remainder is exact; suppress any spurious FE_INEXACT raised by the
+            // intermediate division and FMA operations.
+            int inexact = fetestexcept(FE_INEXACT);
+
             // Raw biased exponent fields suffice for d: the 1023 bias cancels in the
             // subtraction, and for subnormal y (biased field 0) nsteps is off by at
             // most 2, which the final RneD step absorbs without loss of correctness.
@@ -212,6 +219,10 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
 
                 result = (adx == 0.0) ? copysign(0.0, x)
                        : (ix & UINT64_C(0x8000000000000000)) ? -adx : adx;
+            }
+
+            if (!inexact) {
+                feclearexcept(FE_INEXACT);
             }
         }
     }
