@@ -170,37 +170,34 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
             // raised by the intermediate division and FMA operations.
             int inexact = fetestexcept(FE_INEXACT);
 
-            // Attempt single-precision reduction first.
-            // RneF rounds q to the nearest-even integer, rounding-mode independently,
-            // via vroundss imm=8 (SSE4.1) or round() (fallback, nonneg q).
-            // The compiler emits vdivss + round + vfnmadd231ss in XMM registers.
-            //
-            // r_f can be negative when RneF rounds up (fractional part > 0.5, or a
-            // half-integer tie rounded toward the odd neighbour in the fallback path),
-            // and can be >= fay when the exponent difference exceeds ~24 bits.
-            // Both cases fall through to the double path below.
-            float q_f = fax / fay;             // vdivss
-            float n_f = RneF(q_f);             // nearest-even (SSE4.1) or round-half-up (fallback)
-            float r_f = fmaf(-n_f, fay, fax);  // vfnmadd231ss
-
-            // Fast path: r_f is the exact remainder when it falls in [0, fay/2).
-            // The correct remainder range is (-fay/2, fay/2]; values in [fay/2, fay)
-            // mean n_f should have been one higher, so those fall through to double.
-            // Using the unsigned integer trick: for nonneg IEEE 754 floats the bit
-            // pattern is monotone, so FloatToUint(r_f) < FloatToUint(fay*0.5f)
-            // iff 0.0f <= r_f < fay/2.  Negative r_f has its sign bit set, giving a
-            // large unsigned value that always fails the test.
+            // Try single-precision reduction first, but only when the exponent
+            // difference is small enough that the float quotient retains fractional
+            // bits.  When ax - ay > 24 * (1u << 23) the quotient ax/ay >= 2^24 and
+            // all fractional precision is lost; the float path would always fall
+            // through to double, wasting a division and FMA.
+            // ax - ay cannot wrap since both have sign bits cleared and ax > ay.
             uint32_t half_ay = FloatToUint(fay * 0.5f);
-            if (likely(FloatToUint(r_f) < half_ay)) {
-                result = (r_f == 0.0f) ? copysignf(0.0f, x)
-                       : (ix & SIGNBIT_SP32) ? -r_f : r_f;
-            } else {
-                // Float path inaccurate: r_f < 0 (RneF rounded up, or fay is a tiny
-                // denormal causing q_f to overflow to inf), r_f in [fay/2, fay) (n_f too
-                // small -- true remainder is negative), or r_f >= fay (exponent difference
-                // > ~24 bits, n_f lost low bits).
-                //
-                // Recompute entirely in double using RneD (rounding-mode independent).
+            do {
+                if (likely(ax - ay <= 24u * (1u << 23))) {
+                    // RneF rounds q to nearest-even, rounding-mode independently,
+                    // via vroundss imm=8 (SSE4.1) or round() (fallback, nonneg q).
+                    // r_f can be negative when RneF rounds up, or >= fay when n_f is
+                    // too small; both cases fall through to the double path.
+                    float q_f = fax / fay;             // vdivss
+                    float n_f = RneF(q_f);             // nearest-even (SSE4.1) or round() (fallback)
+                    float r_f = fmaf(-n_f, fay, fax);  // vfnmadd231ss
+
+                    // Accept r_f when it falls in [0, fay/2): the bit-pattern comparison
+                    // also rejects negative r_f (sign bit set -> large unsigned value).
+                    if (likely(FloatToUint(r_f) < half_ay)) {
+                        result = (r_f == 0.0f) ? copysignf(0.0f, x)
+                               : (ix & SIGNBIT_SP32) ? -r_f : r_f;
+                        break;
+                    }
+                }
+
+                // Float path skipped (exponent diff > 24) or inaccurate (r_f < 0,
+                // r_f in [fay/2, fay), or r_f >= fay): recompute in double.
                 double adx = (double)fax;
                 double ady = (double)fay;
                 uint64_t adx_bits = asuint64(adx);
@@ -249,10 +246,8 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
                     uint32_t result_bits = FloatToUint(rf) | ((ix & SIGNBIT_SP32) ^ sign_r);
                     memcpy(&result, &result_bits, sizeof(result));
                 }
-            }
+            } while (0);
 
-            // Suppress spurious FE_INEXACT from intermediate division/FMA;
-            // remainder is exact so no inexact exception should be raised.
             if (!inexact) {
                 feclearexcept(FE_INEXACT);
             }
