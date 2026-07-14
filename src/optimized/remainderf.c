@@ -67,8 +67,11 @@
 //   remainder(x, Inf)  -> x             (finite x)
 //   remainder(0,   y)  -> 0             (sign preserved)
 
+#pragma STDC FENV_ACCESS ON
+
 #include <stdint.h>
 #include <math.h>
+#include <fenv.h>
 #include <string.h>
 
 #include "libm_macros.h"
@@ -163,7 +166,11 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
                        : (ix & SIGNBIT_SP32) ? -r : r;
             }
         } else {
-            // |x| > |y|.  Attempt single-precision reduction first.
+            // |x| > |y|.  remainder is exact; suppress any spurious FE_INEXACT
+            // raised by the intermediate division and FMA operations.
+            int inexact = fetestexcept(FE_INEXACT);
+
+            // Attempt single-precision reduction first.
             // RneF rounds q to the nearest-even integer, rounding-mode independently,
             // via vroundss imm=8 (SSE4.1) or round() (fallback, nonneg q).
             // The compiler emits vdivss + round + vfnmadd231ss in XMM registers.
@@ -242,6 +249,12 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
                     uint32_t result_bits = FloatToUint(rf) | ((ix & SIGNBIT_SP32) ^ sign_r);
                     memcpy(&result, &result_bits, sizeof(result));
                 }
+            }
+
+            // Suppress spurious FE_INEXACT from intermediate division/FMA;
+            // remainder is exact so no inexact exception should be raised.
+            if (!inexact) {
+                feclearexcept(FE_INEXACT);
             }
         }
     }
