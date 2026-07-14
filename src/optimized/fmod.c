@@ -47,8 +47,11 @@
  *
  */
 
+#pragma STDC FENV_ACCESS ON
+
 #include <stdint.h>
 #include <math.h>
+#include <fenv.h>
 #include <float.h>
 
 #include "libm_macros.h"
@@ -153,6 +156,10 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
 
             if (adx >= ady)
             {
+                // fmod is exact; suppress any spurious FE_INEXACT from intermediate
+                // division operations.
+                int inexact = fetestexcept(FE_INEXACT);
+
                 uint64_t xe = ax >> EXPSHIFTBITS_DP64;
                 uint64_t ye = ay >> EXPSHIFTBITS_DP64;
 
@@ -173,7 +180,12 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                     }
                 }
                 result = copysign(adx, x);
+
+                if (!inexact) {
+                    feclearexcept(FE_INEXACT);
+                }
             }
+
         }
     }
 

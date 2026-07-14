@@ -25,8 +25,11 @@
  *
  */
 
+#pragma STDC FENV_ACCESS ON
+
 #include <stdint.h>
 #include <math.h>
+#include <fenv.h>
 #include <float.h>
 
 #include "libm_macros.h"
@@ -81,6 +84,10 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             uint64_t ay = asuint64((double) y) & POS_BITSET_DP64;
             if (ax >= ay)
             {
+                // fmod is exact; suppress any spurious FE_INEXACT from intermediate
+                // division operations.
+                int inexact = fetestexcept(FE_INEXACT);
+
                 /* FMODF_CHUNK_EXP = 24*2^52, so (ax-ay)/FMODF_CHUNK_EXP == (xe-ye)/24:
                  * ax-ay = (xe-ye)*2^52 + mantissa_delta, |mantissa_delta| < 2^52,
                  * and dividing by 24*2^52 truncates the fractional part.  ax>=ay
@@ -106,7 +113,12 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
 
                 /* Convert reduced |x| to float and copy original x sign */
                 result = copysignf((float) adx, x);
+
+                if (!inexact) {
+                    feclearexcept(FE_INEXACT);
+                }
             }
+
         }
     }
 
