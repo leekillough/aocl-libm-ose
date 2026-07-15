@@ -64,7 +64,9 @@
 //   remainder(x, Inf) -> x             (finite x)
 //   remainder(0,   y) -> 0             (sign preserved)
 
+#if defined(__clang__) || defined(_MSC_VER)
 #pragma STDC FENV_ACCESS ON
+#endif
 
 #include <stdint.h>
 #include <math.h>
