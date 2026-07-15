@@ -25,7 +25,9 @@
  *
  */
 
+#if defined(__clang__) || defined(_MSC_VER)
 #pragma STDC FENV_ACCESS ON
+#endif
 
 #include <stdint.h>
 #include <math.h>
