@@ -116,6 +116,16 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 /* Convert reduced |x| to float and copy original x sign */
                 result = copysignf((float) adx, x);
 
+#ifndef WINDOWS
+                /* The double->float conversion is exact when adx is a power-of-2
+                 * subnormal float, so the hardware does not raise FE_UNDERFLOW.
+                 * Raise it explicitly to match glibc behavior. */
+                uint32_t fbits = asuint32(result) & ~SIGNBIT_SP32;
+                if (fbits != 0 && fbits < 0x00800000u) {
+                    feraiseexcept(FE_UNDERFLOW);
+                }
+#endif
+
                 if (!inexact) {
                     feclearexcept(FE_INEXACT);
                 }
