@@ -86,7 +86,7 @@ static double FmodGeneral(double adx, const double ady)
          * conservatively scale tw by 2^-28 before splitting and scale hy back
          * up. Scaling down by 2^-28 cannot underflow here because tw is
          * extremely large. */
-        const double splitter = 134217729.0; /* 2^27 + 1 */
+        const double splitter = 0x1.0000002p+27; /* 2^27 + 1 */
         double hy;
         if (unlikely(tw > 0x1p996)) {
             double tw_sc = tw * 0x1p-28;
@@ -100,8 +100,13 @@ static double FmodGeneral(double adx, const double ady)
         double hr = cr - (cr - r);
         double ty = tw - hy;
         double tr = r - hr;
-        double cc = (((hy*hr - r*tw) + hy*tr) + ty*hr) + tr*ty;
         double c = r*tw;
+        /* Use fma throughout to avoid intermediate overflow: hy and hr are
+         * Veltkamp high parts and can individually round up, so hy*hr may
+         * exceed max_double (e.g. fmod(max_double, 1.0)) even though r*tw
+         * <= adx. fma computes each product+accumulate in infinite precision,
+         * preventing overflow and reducing rounding error. */
+        double cc = fma(tr, ty, fma(ty, hr, fma(hy, tr, fma(hy, hr, -c))));
         double v = adx - c;
         double res = (((adx - v) - c) - cc) + v;
         adx = res < 0 ? res + tw : res;
