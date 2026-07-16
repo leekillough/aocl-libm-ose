@@ -86,10 +86,6 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             uint64_t ay = asuint64((double) y) & POS_BITSET_DP64;
             if (ax >= ay)
             {
-                // fmod is exact; suppress any spurious FE_INEXACT from intermediate
-                // division operations.
-                int inexact = fetestexcept(FE_INEXACT);
-
                 /* FMODF_CHUNK_EXP = 24*2^52, so (ax-ay)/FMODF_CHUNK_EXP == (xe-ye)/24:
                    ax-ay = (xe-ye)*2^52 + mantissa_delta, |mantissa_delta| < 2^52,
                    and dividing by 24*2^52 truncates the fractional part.  ax>=ay
@@ -127,11 +123,6 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                     }
                 }
 #endif
-
-                // Clear FE_INEXACT if it was clear on fmodf entry
-                if (!inexact) {
-                    feclearexcept(FE_INEXACT);
-                }
 
                 // Copy original x sign bit
                 result = copysignf(result, x);
