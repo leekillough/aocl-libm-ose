@@ -163,10 +163,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
 
             if (adx >= ady)
             {
-                // fmod is exact; suppress any spurious FE_INEXACT or FE_UNDERFLOW
-                // from intermediate division and scaling operations.
-                int except = fetestexcept(FE_INEXACT | FE_UNDERFLOW);
-
+                int  except = fetestexcept(FE_ALL_EXCEPT);
                 uint64_t xe = ax >> EXPSHIFTBITS_DP64;
                 uint64_t ye = ay >> EXPSHIFTBITS_DP64;
 
@@ -182,12 +179,14 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                     adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
                     if (adx < 0)
                     {
-                        /* Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady */
+                        // Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady
                         adx += ady;
                     }
                 }
                 result = copysign(adx, x);
 
+                // fmod is exact; suppress any spurious FE_INEXACT or FE_UNDERFLOW
+                // from intermediate division and scaling operations.
                 int to_clear = ~except & (FE_INEXACT | FE_UNDERFLOW);
                 if (to_clear != 0) {
                     feclearexcept(to_clear);
