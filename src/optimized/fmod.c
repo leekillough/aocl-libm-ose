@@ -187,7 +187,10 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
 
                 // fmod is exact; suppress any spurious FE_INEXACT or FE_UNDERFLOW
                 // from intermediate division and scaling operations.
-                feclearexcept(~except & (FE_INEXACT | FE_UNDERFLOW));
+                int to_clear = ~except & (FE_INEXACT | FE_UNDERFLOW);
+                if (to_clear != 0) {
+                    feclearexcept(to_clear);
+                }
             }
 
         }
