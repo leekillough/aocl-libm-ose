@@ -91,21 +91,21 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 int inexact = fetestexcept(FE_INEXACT);
 
                 /* FMODF_CHUNK_EXP = 24*2^52, so (ax-ay)/FMODF_CHUNK_EXP == (xe-ye)/24:
-                 * ax-ay = (xe-ye)*2^52 + mantissa_delta, |mantissa_delta| < 2^52,
-                 * and dividing by 24*2^52 truncates the fractional part.  ax>=ay
-                 * (checked above) guarantees xe>=ye and that ax-ay cannot wrap in
-                 * uint64_t since sign bits are cleared so both ax,ay < 2^63. */
+                   ax-ay = (xe-ye)*2^52 + mantissa_delta, |mantissa_delta| < 2^52,
+                   and dividing by 24*2^52 truncates the fractional part.  ax>=ay
+                   (checked above) guarantees xe>=ye and that ax-ay cannot wrap in
+                   uint64_t since sign bits are cleared so both ax,ay < 2^63. */
                 uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
                 double   adx = asdouble(ax);
                 do
                 {
-                    /* |y| * 2^(24*quo) */
+                    // |y| * 2^(24*quo)
                     double ady = asdouble(quo * FMODF_CHUNK_EXP + ay);
 
-                    /* Subtract floor( |x|/|y| ) * |y| from |x| */
+                    // Subtract floor( |x|/|y| ) * |y| from |x|
                     adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
 
-                    /* Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady */
+                    // Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady
                     if (adx < 0)
                     {
                         adx += ady;
@@ -113,22 +113,28 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 }
                 while (unlikely(quo-- != 0));
 
-                /* Convert reduced |x| to float and copy original x sign */
-                result = copysignf((float) adx, x);
+                // Convert reduced |x| to float
+                result = (float) adx;
 
 #ifndef WINDOWS
                 /* The double->float conversion is exact when adx is a power-of-2
-                 * subnormal float, so the hardware does not raise FE_UNDERFLOW.
-                 * Raise it explicitly to match glibc behavior. */
-                uint32_t fbits = asuint32(result) & ~SIGNBIT_SP32;
-                if (fbits != 0 && fbits < 0x00800000u) {
-                    feraiseexcept(FE_UNDERFLOW);
+                   subnormal float, so the hardware does not raise FE_UNDERFLOW.
+                   Raise it explicitly to match glibc behavior. */
+                uint32_t fbits = asuint32(result);
+                if (unlikely(fbits < 0x00800000u)) {
+                    if (fbits != 0) {
+                        feraiseexcept(FE_UNDERFLOW);
+                    }
                 }
 #endif
 
+                // Clear FE_INEXACT if it was clear on fmodf entry
                 if (!inexact) {
                     feclearexcept(FE_INEXACT);
                 }
+
+                // Copy original x sign bit
+                result = copysignf(result, x);
             }
 
         }
