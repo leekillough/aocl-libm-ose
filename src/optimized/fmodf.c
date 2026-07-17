@@ -34,13 +34,11 @@
  * Algorithm:
  * fmodf(x, y) = x - n*y, where n = trunc(x/y).
  *
- * Integer fast path (both x and y normal, exponent difference d <= 104,
- *   GCC/Clang only):
+ * Integer fast path (both x and y normal, exponent difference d <= 104):
  *   Extract 24-bit float significands Mx, My.  Compute rem = Mx * 2^d mod My
  *   using __uint128_t (at most 128 bits).  Pack rem back into a float.
  *   No floating-point operations, so no exceptions are raised.
  *   FE_UNDERFLOW is raised explicitly for subnormal results on Linux.
- *   On MSVC (no __uint128_t), the slow path is used for all inputs.
  *
  * Slow path (subnormal inputs, or exponent difference d > 104):
  *   Double-precision iterative reduction.  Wrapped with fetestexcept /
@@ -108,7 +106,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 int ye_f = (int)(fay >> 23);   /* float biased exponent of |y| */
                 int d    = xe_f - ye_f;        /* exponent diff >= 0 since ax>=ay */
 
-#if defined(__GNUC__) && defined(__SIZEOF_INT128__)
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__SIZEOF_INT128__)
                 if (xe_f > 0 && ye_f > 0 && d <= 104)
                 {
                     uint32_t    Mx = (fax & MANTBITS_SP32) | IMPBIT_SP32;
@@ -126,6 +124,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
 #ifndef WINDOWS
                             feraiseexcept(FE_UNDERFLOW);
 #endif
+                        }
                     }
                     result = asfloat(rbits);
                 }
@@ -134,7 +133,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
 
                 {
                     // Slow path: double-precision loop; suppress spurious FE_INEXACT.
-                    // Used for subnormals, d > 104, or MSVC (no __uint128_t).
+                    // Used for subnormals, d > 104, or targets without __uint128_t.
                     int except = fetestexcept(FE_ALL_EXCEPT);
                     uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
                     double   adx = asdouble(ax);
