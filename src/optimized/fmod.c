@@ -36,9 +36,9 @@
  *
  * Fast path (normal x and y with exponent difference d <= 52):
  *   Extract 53-bit integer significands Mx, My.  Compute rem = Mx * 2^d mod My
- *   using __uint128_t (at most 105 bits, GCC/Clang only).  Pack rem back into
+ *   using __uint128_t (at most 105 bits; GCC and Clang).  Pack rem back into
  *   a double.  No floating-point operations are performed, so no exceptions are
- *   raised.  On MSVC (no __uint128_t), the general path is used for all inputs.
+ *   raised.  x86_64 uses inline divq in Rem128 for a single-instruction modulo.
  *
  * General path (subnormals, or exponent difference > 52):
  *   FmodGeneral: iterative Veltkamp-Dekker reduction.  Wrapped with
@@ -187,7 +187,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                 {
                     // Fast path
 
-#if defined(__GNUC__) && (defined(__SIZEOF_INT128__) || defined(__x86_64__))
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__SIZEOF_INT128__)
                     // Integer fast path (GCC/Clang): no FP ops, no exceptions.
                     // rem = Mx * 2^d mod My; at most 53+52 = 105 bits.
                     uint64_t rem = Rem128((ax & MANTBITS_DP64) | IMPBIT_DP64,
@@ -201,7 +201,8 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                     }
                     adx = asdouble(rbits);
 #else
-                    // Fallback: single FP division with exception suppression.
+                    // Fallback (non-GCC/Clang compiler, or no __uint128_t):
+                    // single FP division with exception suppression.
                     // FmodGeneral is not needed since d <= 52 and both inputs are normal;
                     // one truncated division + FMA gives the exact remainder.
                     // FE_INEXACT comes from the division; FE_UNDERFLOW if the result
