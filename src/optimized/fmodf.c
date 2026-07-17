@@ -34,13 +34,13 @@
  * Algorithm:
  * fmodf(x, y) = x - n*y, where n = trunc(x/y).
  *
- * Integer fast path (both x and y normal, exponent difference d <= 40):
+ * Integer fast path (exponent difference d <= 40):
  *   Extract 24-bit float significands Mx, My.  Compute rem = Mx * 2^d mod My
  *   using 64-bit arithmetic (Mx < 2^24 and d <= 40, so Mx * 2^d < 2^64).
  *   No floating-point operations, so no exceptions are raised.
  *   FE_UNDERFLOW is raised explicitly for subnormal results on non-Windows.
  *
- * Slow path (subnormal inputs, or exponent difference d > 40):
+ * Slow path (exponent difference d > 40):
  *   Double-precision iterative reduction.  Wrapped with fetestexcept /
  *   feclearexcept to suppress spurious FE_INEXACT, since fmodf is exact.
  *
@@ -81,13 +81,10 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     }
     else if (unlikely(fax == POS_INF_F32) || (fay == 0))
     {   // |x| == Inf || y == 0
-        result = __alm_handle_errorf(QNANBITPATT_SP32, AMD_F_INVALID);
+        result = __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
     }
-    else if (fax == fay)
-    {   // |x| == |y|
-        result = copysignf(0.0f, x);
-    }
-    else {
+    else
+    {
         uint64_t ax = asuint64((double)x) & POS_BITSET_DP64;
         uint64_t ay = asuint64((double)y) & POS_BITSET_DP64;
         if (ax >= ay)
