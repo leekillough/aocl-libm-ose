@@ -156,12 +156,12 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
             }
             else
             {
-                result = __alm_handle_error(ay | QNANBITPATT_DP64, AMD_F_INVALID);
+                result = __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
             }
         }
         else if (unlikely(ay == 0))
         {
-            result = __alm_handle_error(QNANBITPATT_DP64, AMD_F_INVALID);
+            result = __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
         }
         else if (ax == ay)
         {
