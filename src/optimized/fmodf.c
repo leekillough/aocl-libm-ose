@@ -34,13 +34,13 @@
  * Algorithm:
  * fmodf(x, y) = x - n*y, where n = trunc(x/y).
  *
- * Integer fast path (both x and y normal, exponent difference d <= 104):
+ * Integer fast path (both x and y normal, exponent difference d <= 40):
  *   Extract 24-bit float significands Mx, My.  Compute rem = Mx * 2^d mod My
- *   using __uint128_t (at most 128 bits).  Pack rem back into a float.
+ *   using 64-bit arithmetic (Mx < 2^24 and d <= 40, so Mx * 2^d < 2^64).
  *   No floating-point operations, so no exceptions are raised.
- *   FE_UNDERFLOW is raised explicitly for subnormal results on Linux.
+ *   FE_UNDERFLOW is raised explicitly for subnormal results on non-Windows.
  *
- * Slow path (subnormal inputs, or exponent difference d > 104):
+ * Slow path (subnormal inputs, or exponent difference d > 40):
  *   Double-precision iterative reduction.  Wrapped with fetestexcept /
  *   feclearexcept to suppress spurious FE_INEXACT, since fmodf is exact.
  *
@@ -54,6 +54,7 @@
 #include <math.h>
 #include <fenv.h>
 #include <float.h>
+#include <limits.h>
 
 #include "libm_macros.h"
 #include "libm_util_amd.h"
@@ -66,103 +67,96 @@
 
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
+    uint32_t fax = asuint32(x) & ~SIGNBIT_SP32;
     uint32_t fay = asuint32(y) & ~SIGNBIT_SP32;
     float result = x;
 
     if (unlikely(fay > POS_INF_F32))
-    {
+    {   // |y| NaN
         result = x * y;
     }
-    else
-    {
-        uint32_t fax = asuint32(x) & ~SIGNBIT_SP32;
+    else if (unlikely(fax > POS_INF_F32))
+    {   // |x| NaN
+        result = x + x;
+    }
+    else if (unlikely(fax == POS_INF_F32) || (fay == 0))
+    {   // |x| == Inf || y == 0
+        result = __alm_handle_errorf(QNANBITPATT_SP32, AMD_F_INVALID);
+    }
+    else if (fax == fay)
+    {   // |x| == |y|
+        result = copysignf(0.0f, x);
+    }
+    else {
+        uint64_t ax = asuint64((double)x) & POS_BITSET_DP64;
+        uint64_t ay = asuint64((double)y) & POS_BITSET_DP64;
+        if (ax >= ay)
+        {   // |x| >= |y|
+            int xe = (int)(ax >> EXPSHIFTBITS_DP64) -
+                (EXPBIAS_DP64 - EXPBIAS_SP32);
+            int ye = (int)(ay >> EXPSHIFTBITS_DP64) -
+                (EXPBIAS_DP64 - EXPBIAS_SP32);
+            int  d = xe - ye;
 
-        if (unlikely((~fax & EXPBITS_SP32) == 0))
-        {
-            if (fax > POS_INF_F32)
+#if defined(__GNUC__) || defined(__clang__)
+            if (d <= sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32)
             {
-                result = x + x;
+                uint64_t    Mx = ((ax & MANTBITS_DP64) | IMPBIT_DP64) >>
+                    (MANTLENGTH_DP64 - MANTLENGTH_SP32);
+                uint64_t    My = ((ay & MANTBITS_DP64) | IMPBIT_DP64) >>
+                    (MANTLENGTH_DP64 - MANTLENGTH_SP32);
+                uint32_t   rem = (uint32_t)((Mx << d) % My);
+                uint32_t rbits = 0;
+                if (rem != 0) {
+                    int k = __builtin_clz(rem) +
+                        MANTLENGTH_SP32 - sizeof(rem) * CHAR_BIT;
+                    if (ye > k)
+                    {
+                        rbits = ((uint32_t)(ye - k) << EXPSHIFTBITS_SP32)
+                            | ((rem << k) & MANTBITS_SP32);
+                    } else {
+                        // Subnormal float result
+                        rbits = (ye > 0) ? rem << (ye - 1) : rem >> (1 - ye);
+#ifndef WINDOWS
+                        feraiseexcept(FE_UNDERFLOW);
+#endif
+                    }
+                }
+                result = asfloat(rbits);
             }
             else
-            {
-                result = __alm_handle_errorf(fay | QNANBITPATT_SP32, AMD_F_INVALID);
-            }
-        }
-        else if (unlikely(fay == 0))
-        {
-            result = __alm_handle_errorf(QNANBITPATT_SP32, AMD_F_INVALID);
-        }
-        else if (fax == fay)
-        {
-            result = copysignf(0.0f, x);
-        }
-        else
-        {
-            uint64_t ax = asuint64((double) x) & POS_BITSET_DP64;
-            uint64_t ay = asuint64((double) y) & POS_BITSET_DP64;
-            if (ax >= ay)
-            {
-                int xe_f = (int)(fax >> 23);   /* float biased exponent of |x| */
-                int ye_f = (int)(fay >> 23);   /* float biased exponent of |y| */
-                int d    = xe_f - ye_f;        /* exponent diff >= 0 since ax>=ay */
-
-#if (defined(__GNUC__) || defined(__clang__)) && defined(__SIZEOF_INT128__)
-                if (xe_f > 0 && ye_f > 0 && d <= 104)
-                {
-                    uint32_t    Mx = (fax & MANTBITS_SP32) | IMPBIT_SP32;
-                    uint32_t    My = (fay & MANTBITS_SP32) | IMPBIT_SP32;
-                    uint32_t   rem = (uint32_t)(((__uint128_t)Mx << d) % My);
-                    uint32_t rbits = 0;
-                    if (rem != 0) {
-                        int k = __builtin_clz(rem) - 8;
-                        if (ye_f > k)
-                        {
-                            rbits = ((uint32_t)(ye_f - k) << EXPSHIFTBITS_SP32)
-                                | ((rem << k) & MANTBITS_SP32);
-                        } else {
-                            rbits = rem << (ye_f - 1); // Subnormal float result
-#ifndef WINDOWS
-                            feraiseexcept(FE_UNDERFLOW);
-#endif
-                        }
-                    }
-                    result = asfloat(rbits);
-                }
-                else
 #endif
 
+            {
+                // Slow path: double-precision loop; suppress spurious FE_INEXACT.
+                // Used for d > 40, or compilers without __builtin_clz.
+                int   except = fetestexcept(FE_ALL_EXCEPT);
+                uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
+                double   adx = asdouble(ax);
+                do
                 {
-                    // Slow path: double-precision loop; suppress spurious FE_INEXACT.
-                    // Used for subnormals, d > 104, or targets without __uint128_t.
-                    int except = fetestexcept(FE_ALL_EXCEPT);
-                    uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
-                    double   adx = asdouble(ax);
-                    do
+                    double ady = asdouble(quo * FMODF_CHUNK_EXP + ay);
+                    adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
+                    if (adx < 0)
                     {
-                        double ady = asdouble(quo * FMODF_CHUNK_EXP + ay);
-                        adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
-                        if (adx < 0)
-                        {
-                            adx += ady;
-                        }
-                    }
-                    while (unlikely(quo-- != 0));
-                    result = (float) adx;
-
-#ifndef WINDOWS
-                    uint32_t fbits = asuint32(result);
-                    if (unlikely((fbits < 0x00800000u) && (fbits != 0) &&
-                                 ((except & FE_UNDERFLOW) == 0))) {
-                        feraiseexcept(FE_UNDERFLOW);
-                    }
-#endif
-                    if ((except & FE_INEXACT) == 0) {
-                        feclearexcept(FE_INEXACT);
+                        adx += ady;
                     }
                 }
+                while (unlikely(quo-- != 0));
+                result = (float) adx;
 
-                result = copysignf(result, x);
+#ifndef WINDOWS
+                if (unlikely((asuint32(result)-1 < POS_HDENORM_F32) &&
+                             ((except & FE_UNDERFLOW) == 0))) {
+                    feraiseexcept(FE_UNDERFLOW);
+                }
+#endif
+                if ((except & FE_INEXACT) == 0) {
+                    feclearexcept(FE_INEXACT);
+                }
             }
+
+            result = copysignf(result, x);
         }
     }
 
