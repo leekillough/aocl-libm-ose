@@ -34,17 +34,19 @@
  * Algorithm:
  * fmod(x, y) = x - n*y, where n = trunc(x/y).
  *
- * Integer fast path (exponent difference shift <= 52):
- *   Extract 53-bit double significands Mx, My.  Compute rem = Mx * 2^shift mod My
- *   via Rem128, a 128-bit-by-64-bit integer division.  Pack rem back into a
- *   double.  No floating-point operations are performed, so no exceptions are
- *   raised.  x86_64 uses a single divq instruction in Rem128.
+ * Integer fast path (both normal, exponent difference shift <= 52):
+ *   Extract 53-bit double significands Mx, My directly from bit patterns.
+ *   Compute rem = Mx * 2^shift mod My via Rem128, a 128-bit-by-64-bit integer
+ *   division.  Pack rem back into a double.  No floating-point operations are
+ *   performed, so no exceptions are raised.  x86_64 uses a single divq
+ *   instruction in Rem128.
  *
  * Slow path (subnormals, or exponent difference > 52):
- *   Pure integer iterative reduction: rem = Rem128(rem, My, 52), repeated until
- *   shift <= 52, then one final Rem128(rem, My, shift).  Invariant: rem < My <
- *   2^53, so Rem128 never overflows.  No floating-point operations are performed,
- *   so no exceptions are raised.
+ *   Extract significands and exponents via F64Extract (handles subnormals with
+ *   CLZ64).  Pure integer iterative reduction: rem = Rem128(rem, My, 52),
+ *   repeated until shift <= 52, then one final Rem128(rem, My, shift).
+ *   Invariant: rem < My < 2^53, so Rem128 never overflows.  No floating-point
+ *   operations are performed, so no exceptions are raised.
  *
  */
 
@@ -168,29 +170,39 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
     else if (fax >= fay)
     {   // |x| >= |y|
     normal:
-        F64ExpMan fpx = F64Extract(fax);
-        F64ExpMan fpy = F64Extract(fay);
-        int shift = fpx.e - fpy.e;
-        uint64_t rem = fpx.m;
-        const int maxshift = EXPSHIFTBITS_DP64;
+        int xe = (int)(fax >> EXPSHIFTBITS_DP64);
+        int ye = (int)(fay >> EXPSHIFTBITS_DP64);
+        int shift = xe - ye;
+        uint64_t rem;
+        F64ExpMan fpy;
 
-        while (unlikely(shift > maxshift)) {
-            rem = Rem128(rem, fpy.m, maxshift);
-            shift -= maxshift;
+        if (likely(xe != 0 && ye != 0 && shift <= EXPSHIFTBITS_DP64))
+        {
+            // Fast path: both normal, small shift
+            rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
+            fpy = (F64ExpMan){ .m = (fay & MANTBITS_DP64) | IMPBIT_DP64, .e = ye };
         }
-        rem = Rem128(rem, fpy.m, shift);
-        if (likely(rem != 0)) {
-            int k = CLZ64(rem) + MANTLENGTH_DP64
-                - (int)(sizeof(uint64_t) * CHAR_BIT);
-            if (fpy.e > k)
-            {
-                rem = ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
-                    | ((rem << k) & MANTBITS_DP64);
-            } else {
-                // Subnormal double result
-                rem = (fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
+        else
+        {
+            // Slow path: subnormals or large shift
+            F64ExpMan fpx = F64Extract(fax);
+            fpy = F64Extract(fay);
+            shift = fpx.e - fpy.e;
+            rem = fpx.m;
+            while (unlikely(shift > EXPSHIFTBITS_DP64)) {
+                rem = Rem128(rem, fpy.m, EXPSHIFTBITS_DP64);
+                shift -= EXPSHIFTBITS_DP64;
             }
         }
+
+        rem = Rem128(rem, fpy.m, shift);
+        if (likely(rem != 0)) {
+            int k = CLZ64(rem) + MANTLENGTH_DP64 - (int)(sizeof(uint64_t) * CHAR_BIT);
+            rem = (fpy.e > k) ? ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
+                | ((rem << k) & MANTBITS_DP64) :
+                likely(fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
+        }
+
         result = asdouble(rem | xsign);
     }
     return result;
