@@ -38,7 +38,7 @@
  *   Extract 24-bit float significands Mx, My.  Compute rem = Mx * 2^d mod My
  *   using 64-bit arithmetic (Mx < 2^24 and d <= 40, so Mx * 2^d < 2^64).
  *   No floating-point operations, so no exceptions are raised.
- *   FE_UNDERFLOW is raised explicitly for subnormal results on non-Windows.
+ *   FE_UNDERFLOW is raised explicitly for subnormal results on Linux.
  *
  * Slow path (exponent difference d > 40):
  *   Double-precision iterative reduction.  Wrapped with fetestexcept /
@@ -67,7 +67,8 @@
 
 // Slow path: double-precision loop; suppress spurious FE_INEXACT.
 // Used for d > 40, or compilers without __builtin_clz.
-static inline float FmodfGeneral(uint64_t ax, uint64_t ay)
+NOINLINE_COLD
+static uint32_t FmodfGeneral(uint64_t ax, uint64_t ay)
 {
     int   except = fetestexcept(FE_ALL_EXCEPT);
     uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
@@ -82,10 +83,10 @@ static inline float FmodfGeneral(uint64_t ax, uint64_t ay)
         }
     }
     while (unlikely(quo-- != 0));
-    float result = (float) adx;
+    uint32_t result = asuint32((float) adx);
 
-#ifndef WINDOWS
-    if (unlikely((asuint32(result)-1 < POS_HDENORM_F32) &&
+#ifdef __linux__
+    if (unlikely((result-1 < POS_HDENORM_F32) &&
                  ((except & FE_UNDERFLOW) == 0))) {
         feraiseexcept(FE_UNDERFLOW);
     }
@@ -100,9 +101,11 @@ static inline float FmodfGeneral(uint64_t ax, uint64_t ay)
 
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
-    uint32_t fax = asuint32(x) & POS_BITSET_F32;
-    uint32_t fay = asuint32(y) & POS_BITSET_F32;
-    float result = x;
+    uint32_t   fax = asuint32(x);
+    uint32_t   fay = asuint32(y) & POS_BITSET_F32;
+    float   result = x;
+    uint32_t xsign = fax & SIGNBIT_SP32;
+    fax &= POS_BITSET_F32;
 
     if (unlikely(fay > POS_INF_F32))
     {   // |y| NaN
@@ -122,7 +125,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
         uint64_t ay = asuint64((double)y) & POS_BITSET_DP64;
 
 #if !(defined(__GNUC__) || defined(__clang__))
-        result = FmodfGeneral(ax, ay);
+        result = asfloat(FmodfGeneral(ax, ay) | xsign);
 #else
         int xe = (int)(ax >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64 + EXPBIAS_SP32;
         int ye = (int)(ay >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64 + EXPBIAS_SP32;
@@ -130,7 +133,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
 
         if (unlikely(d > sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32))
         {
-            result = FmodfGeneral(ax, ay);
+            result = asfloat(FmodfGeneral(ax, ay) | xsign);
         } else {
             uint64_t    Mx = ((ax & MANTBITS_DP64) | IMPBIT_DP64) >>
                 (MANTLENGTH_DP64 - MANTLENGTH_SP32);
@@ -148,16 +151,14 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
                 } else {
                     // Subnormal float result
                     rbits = (ye > 0) ? rem << (ye - 1) : rem >> (1 - ye);
-#ifndef WINDOWS
+#ifdef __linux__
                     feraiseexcept(FE_UNDERFLOW);
 #endif
                 }
             }
-            result = asfloat(rbits);
+            result = asfloat(rbits | xsign);
         }
 #endif
-
-        result = copysignf(result, x);
     }
     return result;
 }
