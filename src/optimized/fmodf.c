@@ -63,6 +63,7 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
+#define GCC_OR_CLANG    (defined(__GNUC__) || defined(__clang__))
 #define FMODF_CHUNK_EXP 0x180000000000000u  /* 24 * 2^52 */
 
 // Slow path: double-precision loop; suppress spurious FE_INEXACT.
@@ -99,6 +100,31 @@ static uint32_t FmodfGeneral(uint64_t ax, uint64_t ay, uint32_t xsign)
     return result | xsign;
 }
 
+#if GCC_OR_CLANG
+
+typedef struct
+{
+    int e;
+    uint32_t m;
+} F32ExpMan;
+
+static inline F32ExpMan F32Extract(uint32_t fax)
+{
+    int lz;
+    return unlikely(fax < POS_LNORMAL_F32) ?
+        lz = __builtin_clz(fax),
+        (F32ExpMan) {
+            .e = (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32 + 1) - lz,
+            .m = fax << (lz - (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32))
+        } :
+        (F32ExpMan) {
+            .e = (int)(fax >> EXPSHIFTBITS_SP32),
+            .m = (fax & MANTBITS_SP32) | IMPBIT_SP32
+        };
+}
+
+#endif // GCC_OR_CLANG
+
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
     uint32_t   fax = asuint32(x);
@@ -121,36 +147,33 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     }
     else if (fax >= fay)
     {   // |x| >= |y|
-        uint64_t ax = asuint64((double)x) & POS_BITSET_DP64;
-        uint64_t ay = asuint64((double)y) & POS_BITSET_DP64;
+#if GCC_OR_CLANG
+        F32ExpMan fpx = F32Extract(fax);
+        F32ExpMan fpy = F32Extract(fay);
+        int         d = fpx.e - fpy.e;
 
-#if !(defined(__GNUC__) || defined(__clang__))
-        result = asfloat(FmodfGeneral(ax, ay, xsign));
-#else
-        int xe = (int)(ax >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64 + EXPBIAS_SP32;
-        int ye = (int)(ay >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64 + EXPBIAS_SP32;
-        int  d = xe - ye;
-
-        if (unlikely(d > sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32))
+        if (unlikely(d > (int)(sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32)))
         {
+#endif // GCC_OR_CLANG
+
+            uint64_t ax = asuint64((double)x) & POS_BITSET_DP64;
+            uint64_t ay = asuint64((double)y) & POS_BITSET_DP64;
             result = asfloat(FmodfGeneral(ax, ay, xsign));
+
+#if GCC_OR_CLANG
         } else {
-            uint64_t    Mx = ((ax & MANTBITS_DP64) | IMPBIT_DP64) >>
-                (MANTLENGTH_DP64 - MANTLENGTH_SP32);
-            uint64_t    My = ((ay & MANTBITS_DP64) | IMPBIT_DP64) >>
-                (MANTLENGTH_DP64 - MANTLENGTH_SP32);
-            uint32_t   rem = (uint32_t)((Mx << d) % My);
+            uint32_t   rem = (uint32_t)(((uint64_t)fpx.m << d) % fpy.m);
             uint32_t rbits = 0;
             if (rem != 0) {
                 int k = __builtin_clz(rem) + MANTLENGTH_SP32
                     - sizeof(rem) * CHAR_BIT;
-                if (ye > k)
+                if (fpy.e > k)
                 {
-                    rbits = ((uint32_t)(ye - k) << EXPSHIFTBITS_SP32)
+                    rbits = ((uint32_t)(fpy.e - k) << EXPSHIFTBITS_SP32)
                         | ((rem << k) & MANTBITS_SP32);
                 } else {
                     // Subnormal float result
-                    rbits = (ye > 0) ? rem << (ye - 1) : rem >> (1 - ye);
+                    rbits = (fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
 #ifdef __linux__
                     feraiseexcept(FE_UNDERFLOW);
 #endif
@@ -158,7 +181,8 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             }
             result = asfloat(rbits | xsign);
         }
-#endif
+#endif // GCC_OR_CLANG
+
     }
     return result;
 }
