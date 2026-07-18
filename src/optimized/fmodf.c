@@ -34,27 +34,24 @@
  * Algorithm:
  * fmodf(x, y) = x - n*y, where n = trunc(x/y).
  *
- * Integer fast path (exponent difference d <= 40):
+ * Integer fast path (exponent difference shift <= 40):
  *   Extract 24-bit float significands Mx, My.  Compute rem = Mx * 2^d mod My
- *   using 64-bit arithmetic (Mx < 2^24 and d <= 40, so Mx * 2^d < 2^64).
+ *   using 64-bit arithmetic (Mx < 2^24 and shift <= 40, so Mx * 2^d < 2^64).
  *   No floating-point operations, so no exceptions are raised.
  *   FE_UNDERFLOW is raised explicitly for subnormal results on Linux.
- *
- * Slow path (exponent difference d > 40):
- *   Double-precision iterative reduction.  Wrapped with fetestexcept /
- *   feclearexcept to suppress spurious FE_INEXACT, since fmodf is exact.
- *
  */
 
-#if defined(__clang__) || defined(_MSC_VER)
-#pragma STDC FENV_ACCESS ON
-#endif
-
-#include <stdint.h>
-#include <math.h>
-#include <fenv.h>
 #include <float.h>
 #include <limits.h>
+#include <math.h>
+#include <stdint.h>
+
+#ifdef __linux__
+#include <fenv.h>
+#ifdef __clang__
+#pragma STDC FENV_ACCESS ON
+#endif
+#endif
 
 #include "libm_macros.h"
 #include "libm_util_amd.h"
@@ -63,44 +60,26 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-#define GCC_OR_CLANG    (defined(__GNUC__) || defined(__clang__))
-#define FMODF_CHUNK_EXP 0x180000000000000u  /* 24 * 2^52 */
+#if defined(__GNUC__) || defined(__clang__)
 
-// Slow path: double-precision loop; suppress spurious FE_INEXACT.
-// Used for d > 40, or compilers without __builtin_clz.
-NOINLINE_COLD
-static uint32_t FmodfGeneral(uint64_t ax, uint64_t ay, uint32_t xsign)
+#define CLZ32(x) __builtin_clz(x)
+
+#elif defined(_MSC_VER)
+
+#include <intrin.h>
+static inline int alm_clz32(uint32_t x)
 {
-    int   except = fetestexcept(FE_ALL_EXCEPT);
-    uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
-    double   adx = asdouble(ax);
-    do
-    {
-        double ady = asdouble(quo * FMODF_CHUNK_EXP + ay);
-        adx = fma(-(double)(uint64_t)(adx / ady), ady, adx);
-        if (adx < 0.0)
-        {
-            adx += ady;
-        }
-    }
-    while (unlikely(quo-- != 0));
-    uint32_t result = asuint32((float) adx);
-
-#ifdef __linux__
-    if (unlikely((result-1 < POS_HDENORM_F32) &&
-                 ((except & FE_UNDERFLOW) == 0))) {
-        feraiseexcept(FE_UNDERFLOW);
-    }
-#endif
-
-    if ((except & FE_INEXACT) == 0) {
-        feclearexcept(FE_INEXACT);
-    }
-
-    return result | xsign;
+    unsigned long idx;
+    _BitScanReverse(&idx, x);
+    return 31 - (int)idx;
 }
+#define CLZ32(x) alm_clz32(x)
 
-#if GCC_OR_CLANG
+#else
+
+#error "Intrinsic for counting leading zeroes not found"
+
+#endif
 
 typedef struct
 {
@@ -108,11 +87,12 @@ typedef struct
     uint32_t m;
 } F32ExpMan;
 
+// Extract a 32-bit floating point into exponent and mantissa, handling subnormals
 static inline F32ExpMan F32Extract(uint32_t fax)
 {
     int lz;
     return unlikely(fax < POS_LNORMAL_F32) ?
-        lz = __builtin_clz(fax),
+        lz = CLZ32(fax),
         (F32ExpMan) {
             .e = (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32 + 1) - lz,
             .m = fax << (lz - (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32))
@@ -122,8 +102,6 @@ static inline F32ExpMan F32Extract(uint32_t fax)
             .m = (fax & MANTBITS_SP32) | IMPBIT_SP32
         };
 }
-
-#endif // GCC_OR_CLANG
 
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
@@ -155,43 +133,33 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     else if (fax >= fay)
     {   // |x| >= |y|
     normal:
-
-#if GCC_OR_CLANG
         F32ExpMan fpx = F32Extract(fax);
         F32ExpMan fpy = F32Extract(fay);
-        int         d = fpx.e - fpy.e;
+        int     shift = fpx.e - fpy.e;
+        uint32_t  rem = fpx.m;
+        const int maxshift = sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32;
 
-        if (unlikely(d > (int)(sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32)))
-        {
-#endif // GCC_OR_CLANG
-
-            uint64_t ax = asuint64((double)x) & POS_BITSET_DP64;
-            uint64_t ay = asuint64((double)y) & POS_BITSET_DP64;
-            result = asfloat(FmodfGeneral(ax, ay, xsign));
-
-#if GCC_OR_CLANG
-        } else {
-            uint32_t   rem = (uint32_t)(((uint64_t)fpx.m << d) % fpy.m);
-            uint32_t rbits = 0;
-            if (rem != 0) {
-                int k = __builtin_clz(rem) + MANTLENGTH_SP32
-                    - sizeof(rem) * CHAR_BIT;
-                if (fpy.e > k)
-                {
-                    rbits = ((uint32_t)(fpy.e - k) << EXPSHIFTBITS_SP32)
-                        | ((rem << k) & MANTBITS_SP32);
-                } else {
-                    // Subnormal float result
-                    rbits = (fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
-#ifdef __linux__
-                    feraiseexcept(FE_UNDERFLOW);
-#endif
-                }
-            }
-            result = asfloat(rbits | xsign);
+        while (unlikely(shift > maxshift)) {
+            rem = (uint32_t)(((uint64_t)rem << maxshift) % fpy.m);
+            shift -= maxshift;
         }
-#endif // GCC_OR_CLANG
-
+        rem = (uint32_t)(((uint64_t)rem << shift) % fpy.m);
+        if (likely(rem != 0)) {
+            int k = CLZ32(rem) + MANTLENGTH_SP32
+                - (int)(sizeof(rem) * CHAR_BIT);
+            if (fpy.e > k)
+            {
+                rem = ((uint32_t)(fpy.e - k) << EXPSHIFTBITS_SP32)
+                    | ((rem << k) & MANTBITS_SP32);
+            } else {
+                // Subnormal float result
+                rem = (fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
+#ifdef __linux__
+                feraiseexcept(FE_UNDERFLOW);
+#endif
+            }
+        }
+        result = asfloat(rem | xsign);
     }
     return result;
 }
