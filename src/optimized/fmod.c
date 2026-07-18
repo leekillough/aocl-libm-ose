@@ -34,17 +34,18 @@
  * Algorithm:
  * fmod(x, y) = x - n*y, where n = trunc(x/y).
  *
- * Integer fast path (both normal, exponent difference shift <= 52):
+ * Integer fast path (both normal, exponent difference shift <= MAXSHIFT):
  *   Extract 53-bit double significands Mx, My directly from bit patterns.
  *   Compute rem = Mx * 2^shift mod My via Rem128, a 128-bit-by-64-bit integer
  *   division.  Pack rem back into a double.  No floating-point operations are
- *   performed, so no exceptions are raised.  x86_64 uses a single divq
- *   instruction in Rem128.
+ *   performed, so no exceptions are raised.  MAXSHIFT is 63 for the divq and
+ *   _udiv128 implementations (limited by divq overflow: hi < My requires
+ *   shift <= 63 since My has its implicit bit set), and 75 for __uint128_t.
  *
- * Slow path (subnormals, or exponent difference > 52):
+ * Slow path (subnormals, or exponent difference > MAXSHIFT):
  *   Extract significands and exponents via F64Extract (handles subnormals with
- *   CLZ64).  Pure integer iterative reduction: rem = Rem128(rem, My, 52),
- *   repeated until shift <= 52, then one final Rem128(rem, My, shift).
+ *   CLZ64).  Pure integer iterative reduction: rem = Rem128(rem, My, MAXSHIFT),
+ *   repeated until shift <= MAXSHIFT, then one final Rem128(rem, My, shift).
  *   Invariant: rem < My < 2^53, so Rem128 never overflows.  No floating-point
  *   operations are performed, so no exceptions are raised.
  *
@@ -104,6 +105,9 @@ static inline F64ExpMan F64Extract(uint64_t fax)
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
 
+/* hi = Mx >> (64-d) < 2^52 <= My for d in [0,63] when My has implicit bit */
+#define MAXSHIFT 63
+
 static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 {
     uint64_t quot, rem;
@@ -117,12 +121,18 @@ static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 
 #elif defined(__SIZEOF_INT128__)
 
+/* (Mx << d) < 2^128 for d <= 75 since Mx < 2^53; remainder fits in uint64_t */
+#define MAXSHIFT (128 - MANTLENGTH_DP64)
+
 static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 {
     return (uint64_t)(((__uint128_t)Mx << d) % My);
 }
 
 #elif defined(_MSC_VER) && defined(_M_X64)
+
+/* hi = Mx >> (64-d) < 2^52 <= My for d in [0,63] when My has implicit bit */
+#define MAXSHIFT 63
 
 #include <intrin.h>
 static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
@@ -173,10 +183,11 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         int xe = (int)(fax >> EXPSHIFTBITS_DP64);
         int ye = (int)(fay >> EXPSHIFTBITS_DP64);
         int shift = xe - ye;
+        const int maxshift = MAXSHIFT;
         uint64_t rem;
         F64ExpMan fpy;
 
-        if (likely(xe != 0 && ye != 0 && shift <= EXPSHIFTBITS_DP64))
+        if (likely(xe != 0 && ye != 0 && shift <= maxshift))
         {
             // Fast path: both normal, small shift
             rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
@@ -189,9 +200,9 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
             fpy = F64Extract(fay);
             shift = fpx.e - fpy.e;
             rem = fpx.m;
-            while (unlikely(shift > EXPSHIFTBITS_DP64)) {
-                rem = Rem128(rem, fpy.m, EXPSHIFTBITS_DP64);
-                shift -= EXPSHIFTBITS_DP64;
+            while (unlikely(shift > maxshift)) {
+                rem = Rem128(rem, fpy.m, maxshift);
+                shift -= maxshift;
             }
         }
 
