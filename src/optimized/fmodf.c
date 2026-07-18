@@ -68,7 +68,7 @@
 // Slow path: double-precision loop; suppress spurious FE_INEXACT.
 // Used for d > 40, or compilers without __builtin_clz.
 NOINLINE_COLD
-static uint32_t FmodfGeneral(uint64_t ax, uint64_t ay)
+static uint32_t FmodfGeneral(uint64_t ax, uint64_t ay, uint32_t xsign)
 {
     int   except = fetestexcept(FE_ALL_EXCEPT);
     uint64_t quo = (ax - ay) / FMODF_CHUNK_EXP;
@@ -96,7 +96,7 @@ static uint32_t FmodfGeneral(uint64_t ax, uint64_t ay)
         feclearexcept(FE_INEXACT);
     }
 
-    return result;
+    return result | xsign;
 }
 
 float ALM_PROTO_OPT(fmodf)(float x, float y)
@@ -125,7 +125,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
         uint64_t ay = asuint64((double)y) & POS_BITSET_DP64;
 
 #if !(defined(__GNUC__) || defined(__clang__))
-        result = asfloat(FmodfGeneral(ax, ay) | xsign);
+        result = asfloat(FmodfGeneral(ax, ay, xsign));
 #else
         int xe = (int)(ax >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64 + EXPBIAS_SP32;
         int ye = (int)(ay >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64 + EXPBIAS_SP32;
@@ -133,7 +133,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
 
         if (unlikely(d > sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32))
         {
-            result = asfloat(FmodfGeneral(ax, ay) | xsign);
+            result = asfloat(FmodfGeneral(ax, ay, xsign));
         } else {
             uint64_t    Mx = ((ax & MANTBITS_DP64) | IMPBIT_DP64) >>
                 (MANTLENGTH_DP64 - MANTLENGTH_SP32);
