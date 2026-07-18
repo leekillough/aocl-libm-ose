@@ -133,20 +133,29 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     uint32_t xsign = fax & SIGNBIT_SP32;
     fax &= POS_BITSET_F32;
 
-    if (unlikely(fay > POS_INF_F32))
-    {   // |y| NaN
-        result = x * y;
-    }
-    else if (unlikely(fax > POS_INF_F32))
-    {   // |x| NaN
-        result = x + x;
-    }
-    else if (unlikely(fax == POS_INF_F32) || (fay == 0))
-    {   // |x| == Inf || y == 0
-        result = __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
+    if (unlikely(((fay - 1) | fax) >= POS_INF_F32))
+    {
+        if (fay > POS_INF_F32)
+        {   // |y| NaN
+            result = x * y;
+        }
+        else if (fax > POS_INF_F32)
+        {   // |x| NaN
+            result = x + x;
+        }
+        else if ((fax == POS_INF_F32) || (fay == 0))
+        {   // |x| == Inf || y == 0
+            result = __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
+        }
+        else if (fax >= fay)
+        {   // |x| >= |y|
+            goto normal;
+        }
     }
     else if (fax >= fay)
     {   // |x| >= |y|
+    normal:
+
 #if GCC_OR_CLANG
         F32ExpMan fpx = F32Extract(fax);
         F32ExpMan fpy = F32Extract(fay);
