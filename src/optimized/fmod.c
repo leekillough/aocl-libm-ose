@@ -34,27 +34,25 @@
  * Algorithm:
  * fmod(x, y) = x - n*y, where n = trunc(x/y).
  *
- * Fast path (normal x and y with exponent difference d <= 52):
- *   Extract 53-bit integer significands Mx, My.  Compute rem = Mx * 2^d mod My
- *   using __uint128_t (at most 105 bits; GCC and Clang).  Pack rem back into
- *   a double.  No floating-point operations are performed, so no exceptions are
- *   raised.  x86_64 uses inline divq in Rem128 for a single-instruction modulo.
+ * Integer fast path (both normal, exponent difference shift <= MAXSHIFT):
+ *   Extract 53-bit double significands Mx, My directly from bit patterns.
+ *   Compute rem = Mx * 2^shift mod My via Rem128, a 128-bit-by-64-bit integer
+ *   division.  Pack rem back into a double.  No floating-point operations are
+ *   performed, so no exceptions are raised.  MAXSHIFT is 63 for the divq and
+ *   _udiv128 implementations (limited by divq overflow: hi < My requires
+ *   shift <= 63 since My has its implicit bit set), and 75 for __uint128_t.
  *
- * General path (subnormals, or exponent difference > 52):
- *   FmodGeneral: iterative Veltkamp-Dekker reduction.  Wrapped with
- *   fetestexcept / feclearexcept to suppress spurious FE_INEXACT / FE_UNDERFLOW,
- *   since fmod is exact.
+ * Slow path (subnormals, or exponent difference > MAXSHIFT):
+ *   Extract significands and exponents via F64Extract (handles subnormals with
+ *   CLZ64).  Pure integer iterative reduction: rem = Rem128(rem, My, MAXSHIFT),
+ *   repeated until shift <= MAXSHIFT, then one final Rem128(rem, My, shift).
+ *   Invariant: rem < My < 2^53, so Rem128 never overflows.  No floating-point
+ *   operations are performed, so no exceptions are raised.
  *
  */
 
-#if defined(__clang__) || defined(_MSC_VER)
-#pragma STDC FENV_ACCESS ON
-#endif
-
+#include <limits.h>
 #include <stdint.h>
-#include <math.h>
-#include <fenv.h>
-#include <float.h>
 
 #include "libm_macros.h"
 #include "libm_util_amd.h"
@@ -63,61 +61,56 @@
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-#define SCALE_2_POW_52  0x1p52
-#define SCALE_2_POW_N52 0x1p-52
-#define SPLITTER        0x1.0000002p+27
+#if defined(__GNUC__) || defined(__clang__)
 
-NOINLINE_COLD
-static double FmodGeneral(double adx, double ady)
+#define CLZ64(x) __builtin_clzll(x)
+
+#elif defined(_MSC_VER)
+
+#include <intrin.h>
+static inline int alm_clz64(uint64_t x)
 {
-    /* General path: suppress spurious FE_INEXACT/FE_UNDERFLOW. */
-    int to_clear = ~fetestexcept(FE_ALL_EXCEPT) & (FE_INEXACT | FE_UNDERFLOW);
-    double w = ady;
-    double t = adx * SCALE_2_POW_N52;
-    while (w <= t)
-    {
-        w *= SCALE_2_POW_52;
-    }
-    for (;;)
-    {
-        double tw = (w <= ady) ? ady : w;
-        double r = (double)(uint64_t)(adx / tw);
-        double hy;
-        if (unlikely(tw > 0x1p996)) {
-            double tw_sc = tw * 0x1p-28;
-            double ctw = SPLITTER * tw_sc;
-            hy = (ctw - (ctw - tw_sc)) * 0x1p28;
-        } else {
-            double ctw = SPLITTER * tw;
-            hy = ctw - (ctw - tw);
-        }
-        double cr = SPLITTER * r;
-        double hr = cr - (cr - r);
-        double ty = tw - hy;
-        double tr = r - hr;
-        double c = r*tw;
-        double cc = fma(tr, ty, fma(ty, hr, fma(hy, tr, fma(hy, hr, -c))));
-        double v = adx - c;
-        double res = (((adx - v) - c) - cc) + v;
-        adx = (res < 0) ? res + tw : res;
-        if (w <= ady)
-        {
-            break;
-        }
-        w *= SCALE_2_POW_N52;
-    }
-    if (to_clear) {
-        feclearexcept(to_clear);
-    }
-    return adx;
+    unsigned long idx;
+    _BitScanReverse64(&idx, x);
+    return 63 - (int)idx;
+}
+#define CLZ64(x) alm_clz64(x)
+
+#else
+
+#error "Intrinsic for counting leading zeroes not found"
+
+#endif
+
+typedef struct
+{
+    uint64_t m;  // 53-bit significand (including implicit 1)
+    int e;       // biased exponent
+} F64ExpMan;
+
+static inline F64ExpMan F64Extract(uint64_t fax)
+{
+    int lz;
+    return unlikely(fax < POS_LNORMAL_F64) ?
+        lz = CLZ64(fax),
+        (F64ExpMan) {
+            .m = fax << (lz - (int)(sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_DP64)),
+            .e = (int)(sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_DP64 + 1) - lz
+        } :
+        (F64ExpMan) {
+            .m = (fax & MANTBITS_DP64) | IMPBIT_DP64,
+            .e = (int)(fax >> EXPSHIFTBITS_DP64)
+        };
 }
 
-#ifdef __x86_64__
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+
+/* hi = Mx >> (64-d) < 2^52 <= My for d in [0,63] when My has implicit bit */
+#define MAXSHIFT 63
 
 static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 {
-    uint64_t quot;
-    uint64_t rem;
+    uint64_t quot, rem;
     uint64_t hi = (d != 0) ? Mx >> (64 - d) : 0;
     uint64_t lo = Mx << d;
     __asm__("divq %[divisor]"
@@ -128,85 +121,103 @@ static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 
 #elif defined(__SIZEOF_INT128__)
 
+/* (Mx << d) < 2^128 for d <= 75 since Mx < 2^53; remainder fits in uint64_t */
+#define MAXSHIFT (128 - MANTLENGTH_DP64)
+
 static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 {
     return (uint64_t)(((__uint128_t)Mx << d) % My);
 }
 
+#elif defined(_MSC_VER) && defined(_M_X64)
+
+/* hi = Mx >> (64-d) < 2^52 <= My for d in [0,63] when My has implicit bit.
+ * Note: _udiv128 is unresolved at link time with clang-cl + lld-link due to
+ * a known open bug (https://github.com/llvm/llvm-project/issues/59168).
+ * This branch is only reachable with MSVC link.exe. */
+#define MAXSHIFT 63
+
+#include <intrin.h>
+static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
+{
+    uint64_t rem;
+    uint64_t hi = (d != 0) ? Mx >> (64 - d) : 0;
+    uint64_t lo = Mx << d;
+    _udiv128(hi, lo, My, &rem);
+    return rem;
+}
+
+#else
+
+#error "128-bit integer division not available"
+
 #endif
 
 double ALM_PROTO_OPT(fmod)(double x, double y)
 {
-    uint64_t ax = asuint64(x) & POS_BITSET_DP64;
-    uint64_t ay = asuint64(y) & POS_BITSET_DP64;
+    uint64_t fax = asuint64(x);
+    uint64_t fay = asuint64(y) & POS_BITSET_DP64;
     double result = x;
+    uint64_t xsign = fax & SIGNBIT_DP64;
+    fax &= POS_BITSET_DP64;
 
-    if (unlikely(ay > POS_INF_F64))
-    {   // |y| NaN
-        result = x * y;
-    }
-    else if (unlikely(ax > POS_INF_F64))
-    {   // |x| NaN
-        result = x + x;
-    }
-    else if (unlikely((ax == POS_INF_F64) || (ay == 0)))
-    {   // |x| == Inf || y == 0
-        result = __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
-    }
-    else if (ax >= ay)
+    if (unlikely(((fay - 1) | fax) >= POS_INF_F64))
     {
-        uint64_t xe = ax >> EXPSHIFTBITS_DP64;
-        uint64_t ye = ay >> EXPSHIFTBITS_DP64;
-        int       d = (int)(xe - ye);
+        if (fay > POS_INF_F64)
+        {   // |y| NaN
+            result = x * y;
+        }
+        else if (fax > POS_INF_F64)
+        {   // |x| NaN
+            result = x + x;
+        }
+        else if ((fax == POS_INF_F64) || (fay == 0))
+        {   // |x| == Inf || y == 0
+            result = __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
+        }
+        else if (fax >= fay)
+        {   // |x| >= |y|
+            goto normal;
+        }
+    }
+    else if (fax >= fay)
+    {   // |x| >= |y|
+    normal:
+        int xe = (int)(fax >> EXPSHIFTBITS_DP64);
+        int ye = (int)(fay >> EXPSHIFTBITS_DP64);
+        int shift = xe - ye;
+        const int maxshift = MAXSHIFT;
+        uint64_t rem;
+        F64ExpMan fpy;
 
-        if (unlikely((xe == 0) || (ye == 0) || (d > EXPSHIFTBITS_DP64)))
+        if (likely(xe != 0 && ye != 0 && shift <= maxshift))
         {
-            // General path
-            result = FmodGeneral(asdouble(ax), asdouble(ay));
+            // Fast path: both normal, small shift
+            rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
+            fpy = (F64ExpMan){ .m = (fay & MANTBITS_DP64) | IMPBIT_DP64, .e = ye };
         }
         else
         {
-            // Fast path
-
-#if (defined(__GNUC__) || defined(__clang__)) && defined(__SIZEOF_INT128__)
-            // Integer fast path (GCC/Clang): no FP ops, no exceptions.
-            // rem = Mx * 2^d mod My; at most 53+52 = 105 bits.
-            uint64_t rem = Rem128((ax & MANTBITS_DP64) | IMPBIT_DP64,
-                                  (ay & MANTBITS_DP64) | IMPBIT_DP64, d);
-            uint64_t rbits = 0;
-            if (rem != 0) {
-                int k = __builtin_clzll(rem) +
-                    MANTLENGTH_DP64 - sizeof(rem) * CHAR_BIT;
-                rbits = ((int) ye > k) ?
-                    ((ye - k) << EXPSHIFTBITS_DP64) | ((rem << k) & MANTBITS_DP64) :
-                    rem << ((int)ye - 1);
+            // Slow path: subnormals or large shift
+            F64ExpMan fpx = F64Extract(fax);
+            fpy = F64Extract(fay);
+            shift = fpx.e - fpy.e;
+            rem = fpx.m;
+            while (unlikely(shift > maxshift)) {
+                rem = Rem128(rem, fpy.m, maxshift);
+                shift -= maxshift;
             }
-            result = asdouble(rbits);
-#else
-            // Fallback (non-GCC/Clang compiler, or no __uint128_t):
-            // single FP division with exception suppression.
-            // FmodGeneral is not needed since d <= 52 and both inputs are normal;
-            // one truncated division + FMA gives the exact remainder.
-            // FE_INEXACT comes from the division; FE_UNDERFLOW if the result
-            // is subnormal (possible when ye is near the minimum normal exponent).
-            int to_clear = ~fetestexcept(FE_ALL_EXCEPT) & (FE_INEXACT | FE_UNDERFLOW);
-            double adx = asdouble(ax);
-            double ady = asdouble(ay);
-            result = fma(-(double)(uint64_t)(adx / ady), ady, adx);
-
-            // Division rounds up in FE_TONEAREST/FE_UPWARD; correct by one ady
-            if (result < 0.0) {
-                result += ady;
-            }
-            // Clear any spurious FE_INEXACT, FE_UNDERFLOW exceptions
-            if (to_clear != 0) {
-                feclearexcept(to_clear);
-            }
-#endif
         }
 
-        result = copysign(result, x);
-    }
+        rem = Rem128(rem, fpy.m, shift);
+        if (likely(rem != 0)) {
+            int k = CLZ64(rem) + MANTLENGTH_DP64 - (int)(sizeof(uint64_t) * CHAR_BIT);
+            rem = (fpy.e > k) ? ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
+                | ((rem << k) & MANTBITS_DP64) :
+                likely(fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
+        }
 
+        result = asdouble(rem | xsign);
+    }
     return result;
 }

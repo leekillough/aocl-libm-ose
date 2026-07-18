@@ -83,8 +83,8 @@ static inline int alm_clz32(uint32_t x)
 
 typedef struct
 {
-    int e;
-    uint32_t m;
+    uint32_t m;  // 24-bit significand (including implicit 1)
+    int e;       // biased exponent
 } F32ExpMan;
 
 // Extract a 32-bit floating point into exponent and mantissa, handling subnormals
@@ -94,12 +94,12 @@ static inline F32ExpMan F32Extract(uint32_t fax)
     return unlikely(fax < POS_LNORMAL_F32) ?
         lz = CLZ32(fax),
         (F32ExpMan) {
-            .e = (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32 + 1) - lz,
-            .m = fax << (lz - (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32))
+            .m = fax << (lz - (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32)),
+            .e = (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32 + 1) - lz
         } :
         (F32ExpMan) {
-            .e = (int)(fax >> EXPSHIFTBITS_SP32),
-            .m = (fax & MANTBITS_SP32) | IMPBIT_SP32
+            .m = (fax & MANTBITS_SP32) | IMPBIT_SP32,
+            .e = (int)(fax >> EXPSHIFTBITS_SP32)
         };
 }
 
