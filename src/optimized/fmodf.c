@@ -41,15 +41,17 @@
  *   FE_UNDERFLOW is raised explicitly for subnormal results on Linux.
  */
 
-#if defined(__clang__) || defined(_MSC_VER)
-#pragma STDC FENV_ACCESS ON
-#endif
-
-#include <stdint.h>
-#include <math.h>
-#include <fenv.h>
 #include <float.h>
 #include <limits.h>
+#include <math.h>
+#include <stdint.h>
+
+#ifdef __linux__
+#include <fenv.h>
+#ifdef __clang__
+#pragma STDC FENV_ACCESS ON
+#endif
+#endif
 
 #include "libm_macros.h"
 #include "libm_util_amd.h"
