@@ -180,7 +180,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
     }
     else if (likely(fax >= fay))
     {   // |x| >= |y|
-    normal:
+    normal: ;
         int xe = (int)(fax >> EXPSHIFTBITS_DP64);
         int ye = (int)(fay >> EXPSHIFTBITS_DP64);
         int shift = xe - ye;

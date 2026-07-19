@@ -133,7 +133,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
     }
     else if (fax >= fay)
     {   // |x| >= |y|
-    normal:
+    normal: ;
         F32ExpMan fpx = F32Extract(fax);
         F32ExpMan fpy = F32Extract(fay);
         int     shift = fpx.e - fpy.e;
