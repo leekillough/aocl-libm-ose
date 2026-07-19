@@ -131,7 +131,10 @@ static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 
 #elif defined(_MSC_VER) && defined(_M_X64)
 
-/* hi = Mx >> (64-d) < 2^52 <= My for d in [0,63] when My has implicit bit */
+/* hi = Mx >> (64-d) < 2^52 <= My for d in [0,63] when My has implicit bit.
+ * Note: _udiv128 is unresolved at link time with clang-cl + lld-link due to
+ * a known open bug (https://github.com/llvm/llvm-project/issues/59168).
+ * This branch is only reachable with MSVC link.exe. */
 #define MAXSHIFT 63
 
 #include <intrin.h>
