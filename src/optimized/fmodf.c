@@ -42,7 +42,6 @@
  */
 
 #include <float.h>
-#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 
@@ -81,6 +80,8 @@ static inline int alm_clz32(uint32_t x)
 
 #endif
 
+#define MAXSHIFT (64 - MANTLENGTH_SP32)
+
 typedef struct
 {
     uint32_t m;  // 24-bit significand (including implicit 1)
@@ -94,8 +95,8 @@ static inline F32ExpMan F32Extract(uint32_t fax)
     return unlikely(fax < POS_LNORMAL_F32) ?
         lz = CLZ32(fax),
         (F32ExpMan) {
-            .m = fax << (lz - (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32)),
-            .e = (int)(sizeof(uint32_t) * CHAR_BIT - MANTLENGTH_SP32 + 1) - lz
+            .m = fax << (lz - (32 - MANTLENGTH_SP32)),
+            .e = (32 - MANTLENGTH_SP32 + 1) - lz
         } :
         (F32ExpMan) {
             .m = (fax & MANTBITS_SP32) | IMPBIT_SP32,
@@ -137,16 +138,14 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
         F32ExpMan fpy = F32Extract(fay);
         int     shift = fpx.e - fpy.e;
         uint32_t  rem = fpx.m;
-        const int maxshift = sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_SP32;
 
-        while (unlikely(shift > maxshift)) {
-            rem = (uint32_t)(((uint64_t)rem << maxshift) % fpy.m);
-            shift -= maxshift;
+        while (unlikely(shift > MAXSHIFT)) {
+            rem = (uint32_t)(((uint64_t)rem << MAXSHIFT) % fpy.m);
+            shift -= MAXSHIFT;
         }
         rem = (uint32_t)(((uint64_t)rem << shift) % fpy.m);
         if (likely(rem != 0)) {
-            int k = CLZ32(rem) + MANTLENGTH_SP32
-                - (int)(sizeof(rem) * CHAR_BIT);
+            int k = CLZ32(rem) - (32 - MANTLENGTH_SP32);
             if (fpy.e > k)
             {
                 rem = ((uint32_t)(fpy.e - k) << EXPSHIFTBITS_SP32)
