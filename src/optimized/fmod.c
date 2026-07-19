@@ -185,11 +185,16 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         int xe = (int)(fax >> EXPSHIFTBITS_DP64);
         int ye = (int)(fay >> EXPSHIFTBITS_DP64);
         int shift = xe - ye;
-        const int maxshift = MAXSHIFT;
         uint64_t rem;
         F64ExpMan fpy;
 
-        if (likely((xe != 0) && (ye != 0) && (shift <= maxshift)))
+        // The (xe != 0) test is logically redundant since fax >= fay
+        // (established above) so (ye != 0) implies (xe != 0). But Clang
+        // apparently fuses consecutive side-effect-free equality tests into
+        // parallelizable setX instructions, and if you remove (xe != 0), it
+        // falls back on using multiple branches instead, and loses 11
+        // Mcalls/sec.
+        if (likely((ye != 0) && (xe != 0) && (shift <= MAXSHIFT)))
         {
             // Fast path: both normal, small shift
             rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
@@ -204,9 +209,9 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
             fpy = F64Extract(fay);
             rem = fpx.m;
             shift = fpx.e - fpy.e;
-            while (shift > maxshift) {
-                rem = Rem128(rem, fpy.m, maxshift);
-                shift -= maxshift;
+            while (shift > MAXSHIFT) {
+                rem = Rem128(rem, fpy.m, MAXSHIFT);
+                shift -= MAXSHIFT;
             }
         }
         rem = Rem128(rem, fpy.m, shift);
