@@ -51,7 +51,6 @@
  *
  */
 
-#include <limits.h>
 #include <stdint.h>
 
 #include "libm_macros.h"
@@ -94,8 +93,8 @@ static inline F64ExpMan F64Extract(uint64_t fax)
     return unlikely(fax < POS_LNORMAL_F64) ?
         lz = CLZ64(fax),
         (F64ExpMan) {
-            .m = fax << (lz - (int)(sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_DP64)),
-            .e = (int)(sizeof(uint64_t) * CHAR_BIT - MANTLENGTH_DP64 + 1) - lz
+            .m = fax << (lz - (64 - MANTLENGTH_DP64)),
+            .e = (64 - MANTLENGTH_DP64) + 1 - lz
         } :
         (F64ExpMan) {
             .m = (fax & MANTBITS_DP64) | IMPBIT_DP64,
@@ -216,7 +215,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         }
         rem = Rem128(rem, fpy.m, shift);
         if (likely(rem != 0)) {
-            int k = CLZ64(rem) + MANTLENGTH_DP64 - (int)(sizeof(uint64_t) * CHAR_BIT);
+            int k = CLZ64(rem) - (64 - MANTLENGTH_DP64);
             rem = (fpy.e > k) ? ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
                 | ((rem << k) & MANTBITS_DP64) :
                 likely(fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
