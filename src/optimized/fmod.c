@@ -110,20 +110,6 @@ static inline F64ExpMan F64Extract(uint64_t fax)
 
 static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 {
-#if 0
-    uint64_t lo = Mx << d;
-    if (likely((d = -d) != 0)) {
-        uint64_t quot;
-        uint64_t rem;
-        uint64_t hi = Mx >> (d + 64);   /* d negated above: d+64 == 64-original_d */
-        __asm__("divq %[divisor]"
-                : "=a"(quot), "=d"(rem)
-                : "0"(lo), "1"(hi), [divisor] "r"(My));
-        return rem;
-    } else {
-        return lo % My;
-    }
-#else
     uint64_t quot;
     uint64_t rem;
     uint64_t hi = (d != 0) ? Mx >> (64 - d) : 0;
@@ -132,7 +118,6 @@ static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
             : "=a"(quot), "=d"(rem)
             : "0"(lo), "1"(hi), [divisor] "r"(My));
     return rem;
-#endif
 }
 
 #elif defined(__SIZEOF_INT128__)
@@ -194,7 +179,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
             goto normal;
         }
     }
-    else if (fax >= fay)
+    else if (likely(fax >= fay))
     {   // |x| >= |y|
     normal:
         int xe = (int)(fax >> EXPSHIFTBITS_DP64);
