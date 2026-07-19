@@ -189,7 +189,12 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         uint64_t rem;
         F64ExpMan fpy;
 
-        if (likely((xe != 0) && (ye != 0) && (shift <= maxshift)))
+        // The (xe != 0) test is redundant since fax >= fay (established above)
+        // so (ye != 0) implies (xe != 0). But Clang apparently fuses
+        // consecutive side-effect-free equality tests into parallelizable
+        // setX instructions, and if you remove (xe != 0), it falls back on
+        // using multiple branches instead, and loses 11 Mcalls/sec.
+        if (likely((ye != 0) && (xe != 0) && (shift <= maxshift)))
         {
             // Fast path: both normal, small shift
             rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
