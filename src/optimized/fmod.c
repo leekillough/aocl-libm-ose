@@ -110,13 +110,29 @@ static inline F64ExpMan F64Extract(uint64_t fax)
 
 static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 {
-    uint64_t quot, rem;
+#if 0
+    uint64_t lo = Mx << d;
+    if (likely((d = -d) != 0)) {
+        uint64_t quot;
+        uint64_t rem;
+        uint64_t hi = Mx >> (d + 64);   /* d negated above: d+64 == 64-original_d */
+        __asm__("divq %[divisor]"
+                : "=a"(quot), "=d"(rem)
+                : "0"(lo), "1"(hi), [divisor] "r"(My));
+        return rem;
+    } else {
+        return lo % My;
+    }
+#else
+    uint64_t quot;
+    uint64_t rem;
     uint64_t hi = (d != 0) ? Mx >> (64 - d) : 0;
     uint64_t lo = Mx << d;
     __asm__("divq %[divisor]"
             : "=a"(quot), "=d"(rem)
             : "0"(lo), "1"(hi), [divisor] "r"(My));
     return rem;
+#endif
 }
 
 #elif defined(__SIZEOF_INT128__)
@@ -155,11 +171,9 @@ static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 
 double ALM_PROTO_OPT(fmod)(double x, double y)
 {
-    uint64_t fax = asuint64(x);
-    uint64_t fay = asuint64(y) & POS_BITSET_DP64;
+    uint64_t  fax = asuint64(x) & POS_BITSET_DP64;
+    uint64_t  fay = asuint64(y) & POS_BITSET_DP64;
     double result = x;
-    uint64_t xsign = fax & SIGNBIT_DP64;
-    fax &= POS_BITSET_DP64;
 
     if (unlikely(((fay - 1) | fax) >= POS_INF_F64))
     {
@@ -190,25 +204,26 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         uint64_t rem;
         F64ExpMan fpy;
 
-        if (likely(xe != 0 && ye != 0 && shift <= maxshift))
+        if (likely((xe != 0) && (ye != 0) && (shift <= maxshift)))
         {
             // Fast path: both normal, small shift
             rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
-            fpy = (F64ExpMan){ .m = (fay & MANTBITS_DP64) | IMPBIT_DP64, .e = ye };
+
+            //  My  = (fay & MANTBITS_DP64) | IMPBIT_DP64;
+            fpy = (F64ExpMan) { .m = (fay & MANTBITS_DP64) | IMPBIT_DP64, .e = ye };
         }
         else
         {
             // Slow path: subnormals or large shift
             F64ExpMan fpx = F64Extract(fax);
             fpy = F64Extract(fay);
-            shift = fpx.e - fpy.e;
             rem = fpx.m;
-            while (unlikely(shift > maxshift)) {
+            shift = fpx.e - fpy.e;
+            while (shift > maxshift) {
                 rem = Rem128(rem, fpy.m, maxshift);
                 shift -= maxshift;
             }
         }
-
         rem = Rem128(rem, fpy.m, shift);
         if (likely(rem != 0)) {
             int k = CLZ64(rem) + MANTLENGTH_DP64 - (int)(sizeof(uint64_t) * CHAR_BIT);
@@ -216,8 +231,7 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
                 | ((rem << k) & MANTBITS_DP64) :
                 likely(fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
         }
-
-        result = asdouble(rem | xsign);
+        result = asdouble(rem | (asuint64(result) & SIGNBIT_DP64));
     }
     return result;
 }
