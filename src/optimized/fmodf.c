@@ -80,7 +80,7 @@ static inline int alm_clz32(uint32_t x)
 
 #endif
 
-#define MAXSHIFT (64 - MANTLENGTH_SP32)
+#define MAXSHIFT (64 - MANTLENGTH_SP32)   // 40
 
 typedef struct
 {
@@ -88,17 +88,18 @@ typedef struct
     int e;       // biased exponent
 } F32ExpMan;
 
-// Extract a 32-bit floating point into exponent and mantissa, handling subnormals
+// Extract a single precision value into a mantissa and biased exponent
+// Handles subnormal values
 static inline F32ExpMan F32Extract(uint32_t fax)
 {
     int lz;
     return unlikely(fax < POS_LNORMAL_F32) ?
         lz = CLZ32(fax),
-        (F32ExpMan) {
+        (F32ExpMan) {  // Subnormal values; shift leftmost 1 into implied bit
             .m = fax << (lz - (32 - MANTLENGTH_SP32)),
             .e = (32 - MANTLENGTH_SP32 + 1) - lz
         } :
-        (F32ExpMan) {
+        (F32ExpMan) {  // Normal values
             .m = (fax & MANTBITS_SP32) | IMPBIT_SP32,
             .e = (int)(fax >> EXPSHIFTBITS_SP32)
         };
@@ -106,12 +107,11 @@ static inline F32ExpMan F32Extract(uint32_t fax)
 
 float ALM_PROTO_OPT(fmodf)(float x, float y)
 {
-    uint32_t   fax = asuint32(x);
-    uint32_t   fay = asuint32(y) & POS_BITSET_F32;
-    float   result = x;
-    uint32_t xsign = fax & SIGNBIT_SP32;
-    fax &= POS_BITSET_F32;
+    uint32_t fax = asuint32(x) & POS_BITSET_F32;  // |x| bit pattern
+    uint32_t fay = asuint32(y) & POS_BITSET_F32;  // |y| bit pattern
+    float result = x;  // Default result value = x; saves sign bit for later
 
+    // All error conditions are caught by one predicted-untaken branch
     if (unlikely(((fay - 1) | fax) >= POS_INF_F32))
     {
         if (fay > POS_INF_F32)
@@ -126,39 +126,48 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
         {   // |x| == Inf || y == 0
             result = __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
         }
-        else if (fax >= fay)
-        {   // |x| >= |y|
-            goto normal;
+        else
+        {   // False positive ((fay-1) | fax) >= POS_INF_F32; continue normally
+            goto noerror;
         }
     }
-    else if (fax >= fay)
+    else noerror: if (fax >= fay)
     {   // |x| >= |y|
-    normal: ;
-        F32ExpMan fpx = F32Extract(fax);
-        F32ExpMan fpy = F32Extract(fay);
-        int     shift = fpx.e - fpy.e;
+        F32ExpMan fpx = F32Extract(fax);  // Mantissa and biased exponent of x
+        F32ExpMan fpy = F32Extract(fay);  // Mantissa and biased exponent of y
+        int     shift = fpx.e - fpy.e;    // result = (x * 2^shift) mod y
         uint32_t  rem = fpx.m;
 
+        // While shift > 40, compute (x * 2^40) mod y
         while (unlikely(shift > MAXSHIFT)) {
             rem = (uint32_t)(((uint64_t)rem << MAXSHIFT) % fpy.m);
             shift -= MAXSHIFT;
         }
+
+        // Compute (x * 2^shift) mod y
         rem = (uint32_t)(((uint64_t)rem << shift) % fpy.m);
+
         if (likely(rem != 0)) {
+            // k = number of bits to shift rem left to position implied bit
             int k = CLZ32(rem) - (32 - MANTLENGTH_SP32);
-            if (fpy.e > k)
+
+            if (k < fpy.e)
             {
+                // k < fpy.e for normals, where fpy.e - k is biased result exponent
                 rem = ((uint32_t)(fpy.e - k) << EXPSHIFTBITS_SP32)
                     | ((rem << k) & MANTBITS_SP32);
             } else {
-                // Subnormal float result
-                rem = (fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
+                // For k >= fpy.e, result is subnormal and shifted in mantissa bits
+                rem = likely(fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
 #ifdef __linux__
+                // On Linux, raise FE_UNDERFLOW for glibc compatibility
                 feraiseexcept(FE_UNDERFLOW);
 #endif
             }
         }
-        result = asfloat(rem | xsign);
+
+        // Result is same sign as original x with exponent and mantissa in rem
+        result = asfloat(rem | (asuint32(result) & SIGNBIT_SP32));
     }
     return result;
 }
