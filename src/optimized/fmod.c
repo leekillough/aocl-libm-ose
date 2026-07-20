@@ -87,16 +87,18 @@ typedef struct
     int e;       // biased exponent
 } F64ExpMan;
 
+// Extract a double precision value into a mantissa and biased exponent
+// Handles subnormal values
 static inline F64ExpMan F64Extract(uint64_t fax)
 {
     int lz;
     return unlikely(fax < POS_LNORMAL_F64) ?
         lz = CLZ64(fax),
-        (F64ExpMan) {
+        (F64ExpMan) {  // Subnormal values; shift leftmost 1 into implied bit
             .m = fax << (lz - (64 - MANTLENGTH_DP64)),
-            .e = (64 - MANTLENGTH_DP64) + 1 - lz
+            .e = (64 - MANTLENGTH_DP64 + 1) - lz
         } :
-        (F64ExpMan) {
+        (F64ExpMan) {  // Normal values
             .m = (fax & MANTBITS_DP64) | IMPBIT_DP64,
             .e = (int)(fax >> EXPSHIFTBITS_DP64)
         };
@@ -155,10 +157,11 @@ static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
 
 double ALM_PROTO_OPT(fmod)(double x, double y)
 {
-    uint64_t  fax = asuint64(x) & POS_BITSET_DP64;
-    uint64_t  fay = asuint64(y) & POS_BITSET_DP64;
-    double result = x;
+    uint64_t  fax = asuint64(x) & POS_BITSET_DP64;  // |x| bit pattern
+    uint64_t  fay = asuint64(y) & POS_BITSET_DP64;  // |y| bit pattern
+    double result = x;  // Default result value = x; saves sign bit for later
 
+    // All error conditions are caught by one predicted-untaken branch
     if (unlikely(((fay - 1) | fax) >= POS_INF_F64))
     {
         if (fay > POS_INF_F64)
@@ -173,32 +176,28 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
         {   // |x| == Inf || y == 0
             result = __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
         }
-        else if (fax >= fay)
-        {   // |x| >= |y|
-            goto normal;
+        else
+        {   // False positive ((fay-1) | fax) >= POS_INF_F64; continue normally
+            goto noerror;
         }
     }
-    else if (likely(fax >= fay))
+    else noerror: if (likely(fax >= fay))
     {   // |x| >= |y|
-    normal: ;
-        int xe = (int)(fax >> EXPSHIFTBITS_DP64);
-        int ye = (int)(fay >> EXPSHIFTBITS_DP64);
-        int shift = xe - ye;
+        int xe = (int)(fax >> EXPSHIFTBITS_DP64);  // Biased exponent of x
+        int ye = (int)(fay >> EXPSHIFTBITS_DP64);  // Biased exponent of y
+        int shift = xe - ye;  // result = (x * 2^shift) mod y
         uint64_t rem;
         F64ExpMan fpy;
 
-        // The (xe != 0) test is logically redundant since fax >= fay
-        // (established above) so (ye != 0) implies (xe != 0). But Clang
-        // apparently fuses consecutive side-effect-free equality tests into
-        // parallelizable setX instructions, and if you remove (xe != 0), it
-        // falls back on using multiple branches instead, and loses 11
-        // Mcalls/sec.
+        // The (xe != 0) test is logically redundant since fax >= fay,
+        // so (ye != 0) implies (xe != 0). But Clang fuses consecutive
+        // side-effect-free equality tests into parallelizable setX
+        // instructions, and if you remove (xe != 0), it falls back on
+        // using multiple branches instead, and loses 11 Mcalls/sec.
         if (likely((ye != 0) && (xe != 0) && (shift <= MAXSHIFT)))
         {
             // Fast path: both normal, small shift
             rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
-
-            //  My  = (fay & MANTBITS_DP64) | IMPBIT_DP64;
             fpy = (F64ExpMan) { .m = (fay & MANTBITS_DP64) | IMPBIT_DP64, .e = ye };
         }
         else
@@ -208,18 +207,29 @@ double ALM_PROTO_OPT(fmod)(double x, double y)
             fpy = F64Extract(fay);
             rem = fpx.m;
             shift = fpx.e - fpy.e;
+
+            // While shift > MAXSHIFT, compute (x * 2^MAXSHIFT) mod y
             while (shift > MAXSHIFT) {
                 rem = Rem128(rem, fpy.m, MAXSHIFT);
                 shift -= MAXSHIFT;
             }
         }
+
+        // Compute (x * 2^shift) mod y
         rem = Rem128(rem, fpy.m, shift);
+
         if (likely(rem != 0)) {
+            // k = number of bits to shift rem left to position implied bit
             int k = CLZ64(rem) - (64 - MANTLENGTH_DP64);
-            rem = (fpy.e > k) ? ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
+
+            // k < fpy.e for normals, where fpy.e - k is biased result exponent
+            // For k >= fpy.e, result is subnormal and shifted in mantissa bits
+            rem = (k < fpy.e) ? ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
                 | ((rem << k) & MANTBITS_DP64) :
                 likely(fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
         }
+
+        // Result is same sign as original x with exponent and mantissa in rem
         result = asdouble(rem | (asuint64(result) & SIGNBIT_DP64));
     }
     return result;
