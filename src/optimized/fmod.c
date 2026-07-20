@@ -115,9 +115,10 @@ static inline uint64_t Rem128(uint64_t Mx, uint64_t My, int d)
     uint64_t rem;
     uint64_t hi = (d != 0) ? Mx >> (64 - d) : 0;
     uint64_t lo = Mx << d;
-    __asm__("divq %[divisor]"
+    __asm__ volatile("divq %[divisor]"
             : "=a"(quot), "=d"(rem)
-            : "0"(lo), "1"(hi), [divisor] "r"(My));
+            : "0"(lo), "1"(hi), [divisor] "r"(My)
+            : "cc");
     return rem;
 }
 
