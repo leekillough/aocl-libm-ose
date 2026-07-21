@@ -49,8 +49,8 @@ endif()
 set(VERSION_STRING_BUILD_DATE "Build ${BUILD_DATE}")
 set(LIBALM_VERSION_STRING "${VERSION_STRING_BUILD_DATE}")
 
-configure_file("${PROJECT_SOURCE_DIR}/CMake/version.build.hh.in"
-                "${PROJECT_SOURCE_DIR}/src/version.build.h"
+configure_file("${${PROJECT_PREFIX}_SOURCE_DIR}/CMake/version.build.hh.in"
+                "${${PROJECT_PREFIX}_SOURCE_DIR}/src/version.build.h"
                 @ONLY)
 
 # Get Compiler info. Use the macro
@@ -61,8 +61,8 @@ CHECK_COMPILER_VERSION(COMPILER)
 # Get System info.
 set(BUILD_SYSTEM "${CMAKE_SYSTEM}-${CMAKE_SYSTEM_PROCESSOR}")
 set(BUILD_SYS_INFO "${COMPILER}-${BUILD_SYSTEM}${GLIBC_VERSION}" )
-configure_file("${PROJECT_SOURCE_DIR}/CMake/buildsysinfo.hh.in"
-                "${PROJECT_SOURCE_DIR}/src/buildsysinfo.h"
+configure_file("${${PROJECT_PREFIX}_SOURCE_DIR}/CMake/buildsysinfo.hh.in"
+                "${${PROJECT_PREFIX}_SOURCE_DIR}/src/buildsysinfo.h"
                 @ONLY)
 
 get_optz_flag( optzflag )
@@ -81,6 +81,49 @@ set(LIBMCFLAGS ${LIBMCFLAGS} ${wflags})
 set(LIBMCFLAGS ${LIBMCFLAGS} ${uavmflag})
 set(LIBMCFLAGS ${LIBMCFLAGS} ${picflag})
 set(LIBMCFLAGS ${LIBMCFLAGS} ${auflag})
+
+# ---------------------------------------------------------------------------
+# AVX-512 template-based array wrapper generation
+#
+# Instead of maintaining individual vrda_*.c / vrsa_*.c files for each math
+# function, we use a single template file that is compiled multiple times
+# with different -DALM_FUNC=<name> definitions. This approach:
+#   - Reduces code duplication (one template instead of ~30 nearly-identical files)
+#   - Makes maintenance easier (fix once, apply everywhere)
+#   - Keeps behavior consistent across all array wrappers
+#
+# The template files (vrda_unary_avx512.c, vrsa_unary_avx512.c) use the
+# PASTE macro to construct function names from ALM_FUNC at compile time.
+#
+# These variables are defined here so they are available to both
+# src/optimized/ (for filtering) and src/isa/, src/arch/ (for compilation).
+# ---------------------------------------------------------------------------
+
+# List of unary double functions for vrda template.
+# Each function generates a vrda_<name> wrapper (e.g., vrda_sin, vrda_cos).
+# The wrapper calls the corresponding vrd8_<name> 8-wide vector function.
+# NOTE: Keep in sync with VRDA_UNARY_AVX512_FUNCS in optimized_srcs.py (SCons).
+set(VRDA_UNARY_AVX512_FUNCS
+    sin cos tan exp exp2 log log2
+    asin atan sqrt round
+    erf erfc erfinv erfcinv
+    cdfnorm cdfnorminv
+)
+
+# List of unary float functions for vrsa template.
+# Each function generates a vrsa_<name> wrapper (e.g., vrsa_sinf, vrsa_cosf).
+# The wrapper calls the corresponding vrs16_<name> 16-wide vector function.
+# NOTE: Keep in sync with VRSA_UNARY_AVX512_FUNCS in optimized_srcs.py (SCons).
+set(VRSA_UNARY_AVX512_FUNCS
+    sinf cosf tanf expf exp2f logf log2f log10f
+    asinf atanf acosf sqrtf roundf
+    erff erfcf tanhf
+)
+
+# Template file paths for AVX-512 array wrappers
+set(AVX512_VRDA_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/optimized/vec/avx512/vrda_unary_avx512.c")
+set(AVX512_VRSA_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/optimized/vec/avx512/vrsa_unary_avx512.c")
+
 if(WIN32)
   get_win_flag( winflag )                           # windows flags
   set(LIBMCFLAGS ${LIBMCFLAGS} ${winflag})
@@ -109,10 +152,10 @@ endif()
 
 # include paths under src.
 set(INCLUDE_PATHS
-  "${PROJECT_SOURCE_DIR}/include"
-  "${PROJECT_SOURCE_DIR}/src"
-  "${PROJECT_SOURCE_DIR}/src/optimized"
-  "${PROJECT_SOURCE_DIR}/src/kern"
+  "${${PROJECT_PREFIX}_SOURCE_DIR}/include"
+  "${${PROJECT_PREFIX}_SOURCE_DIR}/src"
+  "${${PROJECT_PREFIX}_SOURCE_DIR}/src/optimized"
+  "${${PROJECT_PREFIX}_SOURCE_DIR}/src/kern"
   )
 include_directories(${INCLUDE_PATHS})
 
@@ -140,8 +183,8 @@ target_compile_options(src PRIVATE ${LIBMCFLAGS} "-O1")
 list(APPEND libmobj $<TARGET_OBJECTS:src>)
 
 # add include headers as part of the install
-set(LIBM_PUBLIC_HEADERS ${PROJECT_SOURCE_DIR}/include/external/amdlibm.h
-                        ${PROJECT_SOURCE_DIR}/include/external/amdlibm_vec.h)
+set(LIBM_PUBLIC_HEADERS "${${PROJECT_PREFIX}_SOURCE_DIR}/include/external/amdlibm.h"
+                        "${${PROJECT_PREFIX}_SOURCE_DIR}/include/external/amdlibm_vec.h")
 
 if (WIN32)
   set(LIBALM libalm)
@@ -187,4 +230,6 @@ install(TARGETS ${libm}
         ARCHIVE DESTINATION ${${PROJECT_PREFIX}_INSTALL_DIR}/lib
         RUNTIME DESTINATION ${${PROJECT_PREFIX}_INSTALL_DIR}/lib
         PRIVATE_HEADER DESTINATION ${${PROJECT_PREFIX}_INSTALL_DIR}/include)
-set(libm ${libm} PARENT_SCOPE)
+
+# Propagate the libmobj target list to the parent scope
+set(libmobj ${libmobj} PARENT_SCOPE)

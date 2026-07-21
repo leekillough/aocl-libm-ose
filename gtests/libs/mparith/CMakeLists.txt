@@ -90,6 +90,8 @@ file(GLOB MPARITH_SRCS
            log2.c
            log10.c
            logb.c
+           lround.c
+           llround.c
            modf.c
            mul.c
            nearbyint.c

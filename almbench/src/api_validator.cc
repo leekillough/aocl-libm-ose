@@ -113,6 +113,7 @@ string api_prototype_to_string(ApiTypes type)
     case API_PROTOTYPE_04: return "API_PROTOTYPE_04";
     case API_PROTOTYPE_05: return "API_PROTOTYPE_05";
     case API_PROTOTYPE_06: return "API_PROTOTYPE_06";
+    case API_PROTOTYPE_07: return "API_PROTOTYPE_07";
     default: return "Unknown";
     }
 }
@@ -145,7 +146,7 @@ static const map<string, vector<string>> api_table_amd = {
     {"erfcinv",   {"sd", "vrd2", "vrd4", "vrd8", "vrda"}},
     {"erfinv",    {"sd", "vrd2", "vrd4", "vrd8", "vrda"}},
     {"exp",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
-    {"exp10",     {"sd", "ss", "vrs4", "vrd2", "vrsa", "vrda"}},
+    {"exp10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrsa", "vrda"}},
     {"exp2",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"expm1",     {"sd", "ss", "vrs4", "vrsa", "vrda"}},
     {"fabs",      {"sd", "ss", "vrs4", "vrs8", "vrd2", "vrd4", "vrsa", "vrda"}},
@@ -162,6 +163,8 @@ static const map<string, vector<string>> api_table_amd = {
     {"log10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrsa", "vrda"}},
     {"log2",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"logb",      {"sd", "ss"}},
+    {"lround",    {"sd", "ss"}},
+    {"llround",   {"sd", "ss"}},
     {"mul",       {"vrsa", "vrda"}},
     {"nextafter", {"sd", "ss"}},
     {"nearbyint", {"sd", "ss"}},
@@ -206,7 +209,7 @@ static const map<string, vector<string>> api_table_glibc = {
     {"erf",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"erfc",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"exp",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
-    {"exp10",     {"sd", "ss", "vrs4", "vrd2"}},
+    {"exp10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2"}},
     {"exp2",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"expm1",     {"sd", "ss", "vrs4"}},
     {"fabs",      {"sd", "ss"}},
@@ -223,6 +226,8 @@ static const map<string, vector<string>> api_table_glibc = {
     {"log10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2"}},
     {"log2",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"logb",      {"sd", "ss"}},
+    {"lround",    {"sd", "ss"}},
+    {"llround",   {"sd", "ss"}},
     {"mul",       {}},
     {"nextafter", {"sd", "ss"}},
     {"nearbyint", {"sd", "ss"}},
@@ -278,6 +283,8 @@ static const map<string, vector<string>> api_table_glibc = {
     {"log10",     {"sd", "ss"}},
     {"log2",      {"sd", "ss"}},
     {"logb",      {"sd", "ss"}},
+    {"lround",    {"sd", "ss"}},
+    {"llround",   {"sd", "ss"}},
     {"mul",       {"sd", "ss"}},
     {"nextafter", {"sd", "ss"}},
     {"nearbyint", {"sd", "ss"}},
@@ -333,6 +340,8 @@ static const map<string, vector<string>> api_table_glibc = {
     {"log2",      {"sd", "ss"}},
     {"log10",     {"sd", "ss"}},
     {"logb",      {"sd", "ss"}},
+    {"lround",    {"sd", "ss"}},
+    {"llround",   {"sd", "ss"}},
     {"mul",       {"sd", "ss"}},
     {"nextafter", {"sd", "ss"}},
     {"nearbyint", {"sd", "ss"}},
@@ -373,7 +382,8 @@ const map<ApiTypes, vector<string>> libm_api_names = {
     {API_PROTOTYPE_03, {"powx"}},
     {API_PROTOTYPE_04, {"sincos"}},
     {API_PROTOTYPE_05, {"linearfrac"}},
-    {API_PROTOTYPE_06, {"ldexp"}}
+    {API_PROTOTYPE_06, {"ldexp"}},
+    {API_PROTOTYPE_07, {"lround", "llround"}}
 };
 
 /*
@@ -538,6 +548,9 @@ int validate_api(struct AlmLibs *alibs,
             break;
         case API_PROTOTYPE_06:
             api_prototype_06<T, U>(alibs, ipp, shimapi, refapi, yop, &writer);
+            break;
+        case API_PROTOTYPE_07:
+            api_prototype_07<T, U>(alibs, ipp, shimapi, refapi, yop, &writer);
             break;
         default:
             cerr << "Unknown API type." << endl;

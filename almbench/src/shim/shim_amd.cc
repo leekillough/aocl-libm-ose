@@ -152,14 +152,14 @@ typedef float (*amd_hypot_ss_func_t)(float, float);
 typedef int (*amd_ilogb_ss_func_t)(float);
 typedef float (*amd_ldexp_ss_func_t)(float, int);
 typedef long long (*amd_llrint_ss_func_t)(float);
-typedef long long (*amd_llround_ss_func_t)(float);
+typedef llint_t (*amd_llround_ss_func_t)(float);
 typedef float (*amd_log_ss_func_t)(float);
 typedef float (*amd_log10_ss_func_t)(float);
 typedef float (*amd_log1p_ss_func_t)(float);
 typedef float (*amd_log2_ss_func_t)(float);
 typedef float (*amd_logb_ss_func_t)(float);
 typedef long (*amd_lrint_ss_func_t)(float);
-typedef long (*amd_lround_ss_func_t)(float);
+typedef lint_t (*amd_lround_ss_func_t)(float);
 typedef float (*amd_modf_ss_func_t)(float, float*);
 typedef float (*amd_nearbyint_ss_func_t)(float);
 typedef float (*amd_nextafter_ss_func_t)(float, float);
@@ -222,14 +222,14 @@ typedef double (*amd_hypot_sd_func_t)(double, double);
 typedef int (*amd_ilogb_sd_func_t)(double);
 typedef double (*amd_ldexp_sd_func_t)(double, int);
 typedef long long (*amd_llrint_sd_func_t)(double);
-typedef long long (*amd_llround_sd_func_t)(double);
+typedef llint_t (*amd_llround_sd_func_t)(double);
 typedef double (*amd_log_sd_func_t)(double);
 typedef double (*amd_log10_sd_func_t)(double);
 typedef double (*amd_log1p_sd_func_t)(double);
 typedef double (*amd_log2_sd_func_t)(double);
 typedef double (*amd_logb_sd_func_t)(double);
 typedef long (*amd_lrint_sd_func_t)(double);
-typedef long (*amd_lround_sd_func_t)(double);
+typedef lint_t (*amd_lround_sd_func_t)(double);
 typedef double (*amd_modf_sd_func_t)(double, double*);
 typedef double (*amd_nearbyint_sd_func_t)(double);
 typedef double (*amd_nextafter_sd_func_t)(double, double);
@@ -358,6 +358,7 @@ typedef void (*amd_sincos_vrs8_func_t)(__m256, __m256*, __m256*);
 typedef __m256 (*amd_sqrt_vrs8_func_t)(__m256);
 typedef __m256 (*amd_tan_vrs8_func_t)(__m256);
 typedef __m256 (*amd_tanh_vrs8_func_t)(__m256);
+typedef __m256 (*amd_exp10_vrs8_func_t)(__m256);
 
 // --- Single Precision Array (vrsa) Functions ---
 typedef void (*amd_acos_vrsa_func_t)(int, const float*, float*);
@@ -477,6 +478,7 @@ typedef __m512 (*amd_cos_vrs16_func_t)(__m512);
 typedef __m512 (*amd_erf_vrs16_func_t)(__m512);
 typedef __m512 (*amd_erfc_vrs16_func_t)(__m512);
 typedef __m512 (*amd_exp_vrs16_func_t)(__m512);
+typedef __m512 (*amd_exp10_vrs16_func_t)(__m512);
 typedef __m512 (*amd_exp2_vrs16_func_t)(__m512);
 typedef __m512 (*amd_linearfrac_vrs16_func_t)(__m512, __m512, float, float, float, float);
 typedef __m512 (*amd_log_vrs16_func_t)(__m512);
@@ -741,6 +743,7 @@ static struct {
     amd_sqrt_vrs8_func_t sqrt_vrs8;
     amd_tan_vrs8_func_t tan_vrs8;
     amd_tanh_vrs8_func_t tanh_vrs8;
+    amd_exp10_vrs8_func_t exp10_vrs8;
 
     // ============================================================================
     // SINGLE PRECISION ARRAY (vrsa) VARIANTS
@@ -862,6 +865,7 @@ static struct {
     amd_erf_vrs16_func_t erf_vrs16;
     amd_erfc_vrs16_func_t erfc_vrs16;
     amd_exp_vrs16_func_t exp_vrs16;
+    amd_exp10_vrs16_func_t exp10_vrs16;
     amd_exp2_vrs16_func_t exp2_vrs16;
     amd_linearfrac_vrs16_func_t linearfrac_vrs16;
     amd_log_vrs16_func_t log_vrs16;
@@ -1261,6 +1265,7 @@ static void init_amd_symbols(void) {
     amd_funcs.sqrt_vrs8 = load_amd_symbol<amd_sqrt_vrs8_func_t>(amd_core, "amd_vrs8_sqrtf");
     amd_funcs.tan_vrs8 = load_amd_symbol<amd_tan_vrs8_func_t>(amd_core, "amd_vrs8_tanf");
     amd_funcs.tanh_vrs8 = load_amd_symbol<amd_tanh_vrs8_func_t>(amd_core, "amd_vrs8_tanhf");
+    amd_funcs.exp10_vrs8 = load_amd_symbol<amd_exp10_vrs8_func_t>(amd_core, "amd_vrs8_exp10f");
 
     // ============================================================================
     // SINGLE PRECISION ARRAY (vrsa) VARIANTS
@@ -1380,6 +1385,7 @@ static void init_amd_symbols(void) {
     amd_funcs.erf_vrs16 = load_amd_symbol<amd_erf_vrs16_func_t>(amd_core, "amd_vrs16_erff");
     amd_funcs.erfc_vrs16 = load_amd_symbol<amd_erfc_vrs16_func_t>(amd_core, "amd_vrs16_erfcf");
     amd_funcs.exp_vrs16 = load_amd_symbol<amd_exp_vrs16_func_t>(amd_core, "amd_vrs16_expf");
+    amd_funcs.exp10_vrs16 = load_amd_symbol<amd_exp10_vrs16_func_t>(amd_core, "amd_vrs16_exp10f");
     amd_funcs.exp2_vrs16 = load_amd_symbol<amd_exp2_vrs16_func_t>(amd_core, "amd_vrs16_exp2f");
     amd_funcs.linearfrac_vrs16 = load_amd_symbol<amd_linearfrac_vrs16_func_t>(amd_core, "amd_vrs16_linearfracf");
     amd_funcs.log_vrs16 = load_amd_symbol<amd_log_vrs16_func_t>(amd_core, "amd_vrs16_logf");
@@ -1578,7 +1584,7 @@ SHIM_EXPORT void shim_llrint_ss(InParams<float, float> *ipp) {
 }
 
 SHIM_EXPORT void shim_llround_ss(InParams<float, float> *ipp) {
-    ipp->op[0] = static_cast<float>(amd_funcs.llroundf(ipp->ip[0]));
+    ipp->iop.ll = amd_funcs.llroundf(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_log_ss(InParams<float, float> *ipp) {
@@ -1606,7 +1612,7 @@ SHIM_EXPORT void shim_lrint_ss(InParams<float, float> *ipp) {
 }
 
 SHIM_EXPORT void shim_lround_ss(InParams<float, float> *ipp) {
-    ipp->op[0] = static_cast<float>(amd_funcs.lroundf(ipp->ip[0]));
+    ipp->iop.l = amd_funcs.lroundf(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_modf_ss(InParams<float, float> *ipp) {
@@ -1855,7 +1861,7 @@ SHIM_EXPORT void shim_llrint_sd(InParams<double, double> *ipp) {
 }
 
 SHIM_EXPORT void shim_llround_sd(InParams<double, double> *ipp) {
-    ipp->op[0] = static_cast<double>(amd_funcs.llround(ipp->ip[0]));
+    ipp->iop.ll = amd_funcs.llround(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_log_sd(InParams<double, double> *ipp) {
@@ -1883,7 +1889,7 @@ SHIM_EXPORT void shim_lrint_sd(InParams<double, double> *ipp) {
 }
 
 SHIM_EXPORT void shim_lround_sd(InParams<double, double> *ipp) {
-    ipp->op[0] = static_cast<double>(amd_funcs.lround(ipp->ip[0]));
+    ipp->iop.l = amd_funcs.lround(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_modf_sd(InParams<double, double> *ipp) {
@@ -2402,6 +2408,10 @@ SHIM_EXPORT void shim_tanh_vrs8(InParams<libm::AlignedM256, float> *ipp) {
     ipp->op[0].data = amd_funcs.tanh_vrs8(ipp->ip[0].data);
 }
 
+SHIM_EXPORT void shim_exp10_vrs8(InParams<libm::AlignedM256, float> *ipp) {
+    ipp->op[0].data = amd_funcs.exp10_vrs8(ipp->ip[0].data);
+}
+
 // ============================================================================
 // SINGLE PRECISION ARRAY (vrsa) VARIANTS
 // ============================================================================
@@ -2835,6 +2845,10 @@ SHIM_EXPORT void shim_erfc_vrs16(InParams<libm::AlignedM512, float> *ipp) {
 
 SHIM_EXPORT void shim_exp_vrs16(InParams<libm::AlignedM512, float> *ipp) {
     ipp->op[0].data = amd_funcs.exp_vrs16(ipp->ip[0].data);
+}
+
+SHIM_EXPORT void shim_exp10_vrs16(InParams<libm::AlignedM512, float> *ipp) {
+    ipp->op[0].data = amd_funcs.exp10_vrs16(ipp->ip[0].data);
 }
 
 SHIM_EXPORT void shim_exp2_vrs16(InParams<libm::AlignedM512, float> *ipp) {

@@ -86,14 +86,14 @@ typedef float (*mkl_hypot_ss_func_t)(float, float);
 typedef int (*mkl_ilogb_ss_func_t)(float);
 typedef float (*mkl_ldexp_ss_func_t)(float, int);
 typedef long long (*mkl_llrint_ss_func_t)(float);
-typedef long long (*mkl_llround_ss_func_t)(float);
+typedef llint_t (*mkl_llround_ss_func_t)(float);
 typedef float (*mkl_log_ss_func_t)(float);
 typedef float (*mkl_log10_ss_func_t)(float);
 typedef float (*mkl_log1p_ss_func_t)(float);
 typedef float (*mkl_log2_ss_func_t)(float);
 typedef float (*mkl_logb_ss_func_t)(float);
 typedef long (*mkl_lrint_ss_func_t)(float);
-typedef long (*mkl_lround_ss_func_t)(float);
+typedef lint_t (*mkl_lround_ss_func_t)(float);
 typedef float (*mkl_modf_ss_func_t)(float, float*);
 typedef float (*mkl_nearbyint_ss_func_t)(float);
 typedef float (*mkl_nextafter_ss_func_t)(float, float);
@@ -151,14 +151,14 @@ typedef double (*mkl_hypot_sd_func_t)(double, double);
 typedef int (*mkl_ilogb_sd_func_t)(double);
 typedef double (*mkl_ldexp_sd_func_t)(double, int);
 typedef long long (*mkl_llrint_sd_func_t)(double);
-typedef long long (*mkl_llround_sd_func_t)(double);
+typedef llint_t (*mkl_llround_sd_func_t)(double);
 typedef double (*mkl_log_sd_func_t)(double);
 typedef double (*mkl_log10_sd_func_t)(double);
 typedef double (*mkl_log1p_sd_func_t)(double);
 typedef double (*mkl_log2_sd_func_t)(double);
 typedef double (*mkl_logb_sd_func_t)(double);
 typedef long (*mkl_lrint_sd_func_t)(double);
-typedef long (*mkl_lround_sd_func_t)(double);
+typedef lint_t (*mkl_lround_sd_func_t)(double);
 typedef double (*mkl_modf_sd_func_t)(double, double*);
 typedef double (*mkl_nearbyint_sd_func_t)(double);
 typedef double (*mkl_nextafter_sd_func_t)(double, double);
@@ -267,6 +267,7 @@ typedef __m256 (*mkl_erf_vrs8_func_t)(__m256);
 typedef __m256 (*mkl_erfc_vrs8_func_t)(__m256);
 typedef __m256 (*mkl_exp_vrs8_func_t)(__m256);
 typedef __m256 (*mkl_exp2_vrs8_func_t)(__m256);
+typedef __m256 (*mkl_exp10_vrs8_func_t)(__m256);
 typedef __m256 (*mkl_fabs_vrs8_func_t)(int, float*, float*);
 typedef __m256 (*mkl_linearfrac_vrs8_func_t)(int, const float*,
     const float*, float, float, float, float, float*);
@@ -629,6 +630,7 @@ static struct {
     mkl_erfc_vrs8_func_t erfc_vrs8;
     mkl_exp_vrs8_func_t exp_vrs8;
     mkl_exp2_vrs8_func_t exp2_vrs8;
+    mkl_exp10_vrs8_func_t exp10_vrs8;
     mkl_fabs_vrs8_func_t fabs_vrs8;
     mkl_linearfrac_vrs8_func_t linearfrac_vrs8;
     mkl_log_vrs8_func_t log_vrs8;
@@ -1085,6 +1087,7 @@ static void init_mkl_symbols(void) {
     mkl_funcs.erfc_vrs8 = load_mkl_symbol<mkl_erfc_vrs8_func_t>(mkl_vml, "__svml_erfcf8");
     mkl_funcs.exp_vrs8 = load_mkl_symbol<mkl_exp_vrs8_func_t>(mkl_vml, "__svml_expf8");
     mkl_funcs.exp2_vrs8 = load_mkl_symbol<mkl_exp2_vrs8_func_t>(mkl_vml, "__svml_exp2f8");
+    mkl_funcs.exp10_vrs8 = load_mkl_symbol<mkl_exp10_vrs8_func_t>(mkl_vml, "__svml_exp10f8");
     mkl_funcs.fabs_vrs8 = load_mkl_symbol<mkl_fabs_vrs8_func_t>(mkl_vma, "vsAbs");
     mkl_funcs.linearfrac_vrs8 = load_mkl_symbol<mkl_linearfrac_vrs8_func_t>(mkl_vma, "vsLinearFrac");
     mkl_funcs.log_vrs8 = load_mkl_symbol<mkl_log_vrs8_func_t>(mkl_vml, "__svml_logf8");
@@ -1391,7 +1394,7 @@ SHIM_EXPORT void shim_llrint_ss(InParams<float, float> *ipp) {
 }
 
 SHIM_EXPORT void shim_llround_ss(InParams<float, float> *ipp) {
-    ipp->op[0] = static_cast<float>(mkl_funcs.llroundf(ipp->ip[0]));
+    ipp->iop.ll = mkl_funcs.llroundf(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_log_ss(InParams<float, float> *ipp) {
@@ -1419,7 +1422,7 @@ SHIM_EXPORT void shim_lrint_ss(InParams<float, float> *ipp) {
 }
 
 SHIM_EXPORT void shim_lround_ss(InParams<float, float> *ipp) {
-    ipp->op[0] = static_cast<float>(mkl_funcs.lroundf(ipp->ip[0]));
+    ipp->iop.l = mkl_funcs.lroundf(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_modf_ss(InParams<float, float> *ipp) {
@@ -1658,7 +1661,7 @@ SHIM_EXPORT void shim_llrint_sd(InParams<double, double> *ipp) {
 }
 
 SHIM_EXPORT void shim_llround_sd(InParams<double, double> *ipp) {
-    ipp->op[0] = static_cast<double>(mkl_funcs.llround(ipp->ip[0]));
+    ipp->iop.ll = mkl_funcs.llround(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_log_sd(InParams<double, double> *ipp) {
@@ -1686,7 +1689,7 @@ SHIM_EXPORT void shim_lrint_sd(InParams<double, double> *ipp) {
 }
 
 SHIM_EXPORT void shim_lround_sd(InParams<double, double> *ipp) {
-    ipp->op[0] = static_cast<double>(mkl_funcs.lround(ipp->ip[0]));
+    ipp->iop.l = mkl_funcs.lround(ipp->ip[0]);
 }
 
 SHIM_EXPORT void shim_modf_sd(InParams<double, double> *ipp) {
@@ -2135,6 +2138,10 @@ SHIM_EXPORT void shim_exp_vrs8(InParams<libm::AlignedM256, float> *ipp) {
 
 SHIM_EXPORT void shim_exp2_vrs8(InParams<libm::AlignedM256, float> *ipp) {
     ipp->op[0].data = mkl_funcs.exp2_vrs8(ipp->ip[0].data);
+}
+
+SHIM_EXPORT void shim_exp10_vrs8(InParams<libm::AlignedM256, float> *ipp) {
+    ipp->op[0].data = mkl_funcs.exp10_vrs8(ipp->ip[0].data);
 }
 
 SHIM_EXPORT void shim_fabs_vrs8(InParams<libm::AlignedM256, float> *ipp) {
@@ -2602,6 +2609,10 @@ SHIM_EXPORT void shim_erfc_vrs16(InParams<libm::AlignedM512, float> *ipp) {
 
 SHIM_EXPORT void shim_exp_vrs16(InParams<libm::AlignedM512, float> *ipp) {
     ipp->op[0].data = mkl_funcs.exp_vrs16(ipp->ip[0].data);
+}
+
+SHIM_EXPORT void shim_exp10_vrs16(InParams<libm::AlignedM512, float> *ipp) {
+    ipp->op[0].data = mkl_funcs.exp10_vrs16(ipp->ip[0].data);
 }
 
 SHIM_EXPORT void shim_exp2_vrs16(InParams<libm::AlignedM512, float> *ipp) {
