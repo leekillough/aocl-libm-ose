@@ -47,9 +47,6 @@
 
 #ifdef __linux__
 #include <fenv.h>
-#ifdef __clang__
-#pragma STDC FENV_ACCESS ON
-#endif
 #endif
 
 #include "libm_macros.h"
