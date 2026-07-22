@@ -80,27 +80,17 @@
 #define CBRT_EXP_COEFF_5    0x1.ee7113506ac13p-6   /*  22/729  */
 #define CBRT_EXP_COEFF_6   -0x1.8090d6221a247p-6   /* -154/6561 */
 
-/*
- * cbrt(2^k) high and low parts for k in {-2, -1, 0, 1, 2}, indexed by k+2.
- * Stored as two parallel arrays so both loads hit the same cache line and
- * the compiler can emit a single indexed load for each, with no branch.
- * rem from biased_exp % 3 is in {-2,-1,0,1,2}, so index = rem + 2.
- */
-static const double CbrtRemH[5] = {
-    6.299605071544647216796875E-1,   /* cbrt(2^-2) high  0x3FE428A2F0000000  k=-2 */
-    7.93700516223907470703125E-1,    /* cbrt(2^-1) high  0x3FE965FEA0000000  k=-1 */
-    1.0E0,                           /* cbrt(2^0)  high  0x3FF0000000000000  k= 0 */
-    1.259921014308929443359375E0,    /* cbrt(2^1)  high  0x3FF428A2F0000000  k= 1 */
-    1.58740103244781494140625E0,     /* cbrt(2^2)  high  0x3FF965FEA0000000  k= 2 */
-};
-
-static const double CbrtRemT[5] = {
-    1.77929718607039166806688400583E-8,  /* cbrt(2^-2) low  0x3e531ae515c447bb */
-    9.76019226667272715610794680662E-9,  /* cbrt(2^-1) low  0x3e44f5b8f20ac166 */
-    0.0E0,                               /* cbrt(2^0)  low  0x0000000000000000 */
-    3.55859437214078333613376801167E-8,  /* cbrt(2^1)  low  0x3e631ae515c447bb */
-    1.95203845333454543122158936132E-8,  /* cbrt(2^2)  low  0x3e54f5b8f20ac166 */
-};
+/* cbrt(2^k) high and low for k in {-2,-1,0,1,2}; switch lets compiler use immediates. */
+#define CBRT_REM_H_N2   0x1.428a2f0000000p-1   /* cbrt(2^-2) high */
+#define CBRT_REM_T_N2   0x1.31ae515c447bbp-26  /* cbrt(2^-2) low  */
+#define CBRT_REM_H_N1   0x1.965fea0000000p-1   /* cbrt(2^-1) high */
+#define CBRT_REM_T_N1   0x1.4f5b8f20ac166p-27  /* cbrt(2^-1) low  */
+#define CBRT_REM_H_0    0x1.0000000000000p+0   /* cbrt(2^0)  high */
+#define CBRT_REM_T_0    0x0.0000000000000p+0   /* cbrt(2^0)  low  */
+#define CBRT_REM_H_P1   0x1.428a2f0000000p+0   /* cbrt(2^1)  high */
+#define CBRT_REM_T_P1   0x1.31ae515c447bbp-25  /* cbrt(2^1)  low  */
+#define CBRT_REM_H_P2   0x1.965fea0000000p+0   /* cbrt(2^2)  high */
+#define CBRT_REM_T_P2   0x1.4f5b8f20ac166p-26  /* cbrt(2^2)  low  */
 
 double
 ALM_PROTO_OPT(cbrt)(double x) {
@@ -178,9 +168,14 @@ ALM_PROTO_OPT(cbrt)(double x) {
             polyB = CBRT_EXP_COEFF_6 * r6 + polyB;
             double poly = polyA + polyB;
 
-            /* CbrtRemH/T indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
-            double cbrtRem_h = CbrtRemH[rem + 2];
-            double cbrtRem_t = CbrtRemT[rem + 2];
+            double cbrtRem_h, cbrtRem_t;
+            switch (rem) {
+            case -2: cbrtRem_h = CBRT_REM_H_N2; cbrtRem_t = CBRT_REM_T_N2; break;
+            case -1: cbrtRem_h = CBRT_REM_H_N1; cbrtRem_t = CBRT_REM_T_N1; break;
+            default: cbrtRem_h = CBRT_REM_H_0;  cbrtRem_t = CBRT_REM_T_0;  break;
+            case  1: cbrtRem_h = CBRT_REM_H_P1; cbrtRem_t = CBRT_REM_T_P1; break;
+            case  2: cbrtRem_h = CBRT_REM_H_P2; cbrtRem_t = CBRT_REM_T_P2; break;
+            }
 
             uint64_t fidx = (mant_idx - 256) << 1;
             double cbrtF_t = F_H_L[fidx];
