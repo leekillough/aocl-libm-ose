@@ -65,6 +65,7 @@
 #include <libm/typehelper.h>
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
+#include <libm/alm_special.h>
 #include <cbrt_data.h>
 
 #define ONE_BY_512          0.001953125                         // 0x3f60000000000000
