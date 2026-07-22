@@ -162,8 +162,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
 
             /*
              * Degree-6 polynomial: c1*r + c2*r^2 + ... + c6*r^6.
-             * Two independent chains (odd A, even B) keep both FMA units busy on Zen 5.
-             * Each accumulation step uses FMA to eliminate one intermediate rounding.
+             * Two independent chains (odd A, even B) keep both FP units busy on Zen 5.
              */
             double r2 = r * r;
             double r3 = r2 * r;
@@ -173,10 +172,10 @@ ALM_PROTO_OPT(cbrt)(double x) {
 
             double polyA = CBRT_EXP_COEFF_1 * r;
             double polyB = CBRT_EXP_COEFF_2 * r2;
-            polyA = fma(CBRT_EXP_COEFF_3, r3, polyA);
-            polyB = fma(CBRT_EXP_COEFF_4, r4, polyB);
-            polyA = fma(CBRT_EXP_COEFF_5, r5, polyA);
-            polyB = fma(CBRT_EXP_COEFF_6, r6, polyB);
+            polyA = CBRT_EXP_COEFF_3 * r3 + polyA;
+            polyB = CBRT_EXP_COEFF_4 * r4 + polyB;
+            polyA = CBRT_EXP_COEFF_5 * r5 + polyA;
+            polyB = CBRT_EXP_COEFF_6 * r6 + polyB;
             double poly = polyA + polyB;
 
             /* CbrtRemH/T indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
