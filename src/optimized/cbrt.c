@@ -57,7 +57,6 @@
 
 #include <stdint.h>
 #include <libm_util_amd.h>
-#include <libm/alm_special.h>
 #include <immintrin.h>
 
 #include <libm_macros.h>
@@ -89,25 +88,9 @@
 #define LOW_2_POW_P2        1.95203845333454543122158936132E-8  // 0x3e54f5b8f20ac166 // cbrt(2^2) Low
 #define HIGH_2_POW_P2       1.58740103244781494140625E0         // 0x3FF965FEA0000000 // cbrt(2^2) High
 
-static inline void cbrt_special(double x, U32 code) {
-    flt64_t ix = {.d = x};
-
-    switch (code){
-    case AMD_F_INVALID:
-        __alm_handle_error(ix.u | QNAN_MASK_64, AMD_F_INVALID);
-        break;
-    case ALM_E_OVERFLOW:
-        __alm_handle_error(ix.u, AMD_F_OVERFLOW);
-        break;
-    default:
-        break;
-    }
-}
-
 double
 ALM_PROTO_OPT(cbrt)(double x) {
     uint64_t uix64;
-    uint64_t sign = 0;
     uint64_t ix = 0;
     uint64_t ixe = 0;
     uint64_t ixm = 0;
@@ -124,11 +107,10 @@ ALM_PROTO_OPT(cbrt)(double x) {
 
     if (unlikely( ixe == PINFBITPATT_DP64 ))
     {
-        if (ixm == 0)
-            cbrt_special(x, AMD_F_OVERFLOW);
-        else
-            cbrt_special(x, AMD_F_INVALID);
-
+        /* cbrt(±Inf) = ±Inf; cbrt(qNaN) = qNaN (no exception);
+         * cbrt(sNaN) signals FE_INVALID and returns a quiet NaN. */
+        if (ixm != 0 && (ixm & QNAN_MASK_64) == 0)
+            __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
         return x + x;
     }
 
@@ -169,10 +151,6 @@ ALM_PROTO_OPT(cbrt)(double x) {
         ixe = ixe >> EXPSHIFTBITS_DP64;
         ixe = ixe + (uint64_t)EMIN_DP64;
     }
-
-    uix64 = asuint64(x);
-
-    sign = uix64 >> 63; // extract sign bit
 
     ixe = ixe - 1023; // exponent - 0x3FF, bias removal
 
@@ -271,9 +249,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
 
     double xd3biasOnly = asdouble(exponDouble);
     ans = ans * xd3biasOnly;
-    if(sign)
-        ans *= -1;
 
-    return ans;
+    return copysign(ans, x);
 
 }
