@@ -163,12 +163,17 @@ ALM_PROTO_OPT(cbrt)(double x) {
     double r5 = r4 * r;
     double r6 = r3 * r3;
 
-    double poly = CBRT_EXP_COEFF_1 * r;
-    poly += CBRT_EXP_COEFF_2 * r2;
-    poly += CBRT_EXP_COEFF_3 * r3;
-    poly += CBRT_EXP_COEFF_4 * r4;
-    poly += CBRT_EXP_COEFF_5 * r5;
-    poly += CBRT_EXP_COEFF_6 * r6;
+    /*
+     * Two independent accumulator chains (odd A, even B) keep both FP
+     * execution units on Zen 5 busy simultaneously.
+     */
+    double polyA = CBRT_EXP_COEFF_1 * r;
+    double polyB = CBRT_EXP_COEFF_2 * r2;
+    polyA += CBRT_EXP_COEFF_3 * r3;
+    polyB += CBRT_EXP_COEFF_4 * r4;
+    polyA += CBRT_EXP_COEFF_5 * r5;
+    polyB += CBRT_EXP_COEFF_6 * r6;
+    double poly = polyA + polyB;
 
     double cbrtRem_h = CbrtRemH[rem + 2];
     double cbrtRem_t = CbrtRemT[rem + 2];
@@ -180,7 +185,8 @@ ALM_PROTO_OPT(cbrt)(double x) {
     double bH = cbrtF_h * cbrtRem_h;
     double bT = (cbrtF_t * cbrtRem_t) + (cbrtF_t * cbrtRem_h) + (cbrtRem_t * cbrtF_h);
 
-    double ans = (poly * bT) + bT + (poly * bH) + bH;
+    /* Two independent (poly*b + b) pairs keep both FP units busy at the final stage. */
+    double ans = (poly * bT + bT) + (poly * bH + bH);
 
     /* Scale by 2^quotient via integer-shift union load; no domain crossing. */
     flt64_t scale = { .u = (uint64_t)(quotient + 1023) << 52 };
