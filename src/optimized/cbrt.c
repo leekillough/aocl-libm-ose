@@ -108,11 +108,9 @@ ALM_PROTO_OPT(cbrt)(double x) {
     uint64_t ixm = MANTBITS_DP64 & ix;
 
     if (unlikely(ixe == PINFBITPATT_DP64)) {
-        if (ixm == 0)
-            __alm_handle_error(ix, AMD_F_OVERFLOW);
-        else
+        if (ixm != 0)
             __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
-        return x + x;
+        return x + x;  /* Inf->Inf, qNaN->qNaN, sNaN->qNaN (FE_INVALID raised above) */
     }
 
     ixe >>= EXPSHIFTBITS_DP64;
