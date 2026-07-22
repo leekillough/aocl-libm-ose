@@ -76,7 +76,6 @@
 #define CBRT_EXP_COEFF_3    6.17283950617283916351141215273E-2  // 0x3faf9add3c0ca458
 #define CBRT_EXP_COEFF_4    -4.11522633744855967363740489873E-2 // 0xbfa511e8d2b3183b
 #define CBRT_EXP_COEFF_5    3.01783264746227734842687340233E-2  // 0x3f9ee7113506ac13
-#define CBRT_EXP_COEFF_6    -2.34720317024843770636888251602E-2 // 0xbf98090d6221a247
 
 /*
  * cbrt(2^k) high and low parts for k in {-2, -1, 0, 1, 2}, indexed by k+2.
@@ -168,7 +167,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
     double     r = mant.d * (rdu.d - (midx.d - 4503599627370496.0) * ONE_BY_512);
 
     /*
-     * Degree-6 polynomial: c1*r + c2*r^2 + c3*r^3 + c4*r^4 + c5*r^5 + c6*r^6.
+     * Degree-5 polynomial: c1*r + c2*r^2 + c3*r^3 + c4*r^4 + c5*r^5.
      * Evaluated in two independent chains so both FMA execution units on Zen 5
      * stay busy simultaneously: A accumulates odd-degree terms, B even-degree.
      */
@@ -176,14 +175,12 @@ ALM_PROTO_OPT(cbrt)(double x) {
     double r3 = r2 * r;
     double r4 = r2 * r2;
     double r5 = r4 * r;
-    double r6 = r3 * r3;
 
     double polyA = CBRT_EXP_COEFF_1 * r;
     double polyB = CBRT_EXP_COEFF_2 * r2;
     polyA += CBRT_EXP_COEFF_3 * r3;
     polyB += CBRT_EXP_COEFF_4 * r4;
     polyA += CBRT_EXP_COEFF_5 * r5;
-    polyB += CBRT_EXP_COEFF_6 * r6;
     double poly = polyA + polyB;
 
     double bH = cbrtF_h.d * cbrtRem_h;
