@@ -184,12 +184,12 @@ ALM_PROTO_OPT(cbrt)(double x) {
             double cbrtRem_t = CbrtRemT[rem + 2];
 
             uint64_t fidx = (mant_idx - 256) << 1;
-            flt64_t cbrtF_t = {.u = F_H_L[fidx]};
-            flt64_t cbrtF_h = {.u = F_H_L[fidx + 1]};
+            double cbrtF_t = F_H_L[fidx];
+            double cbrtF_h = F_H_L[fidx + 1];
 
-            double bH = cbrtF_h.d * cbrtRem_h;
+            double bH = cbrtF_h * cbrtRem_h;
             /* bT = F_t*Rem_t + F_t*Rem_h + Rem_t*F_h; FMA eliminates two intermediate roundings. */
-            double bT = fma(cbrtF_t.d, cbrtRem_t, fma(cbrtF_t.d, cbrtRem_h, cbrtRem_t * cbrtF_h.d));
+            double bT = fma(cbrtF_t, cbrtRem_t, fma(cbrtF_t, cbrtRem_h, cbrtRem_t * cbrtF_h));
 
             /* ans = (1+poly)*bH + (1+poly)*bT; FMA avoids rounding (1+poly). */
             double ans = fma(poly, bH, bH) + fma(poly, bT, bT);
