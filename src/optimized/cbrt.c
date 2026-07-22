@@ -154,6 +154,15 @@ ALM_PROTO_OPT(cbrt)(double x) {
      * subtract the magic constant — IEEE 754 exact integer representability
      * guarantees the result equals mant_idx exactly.
      */
+    /* Issue all table loads before the polynomial so the CPU can hide
+     * cache-miss latency while the FP chains are executing. */
+    double cbrtRem_h = cbrt_rem_h[rem + 2];
+    double cbrtRem_t = cbrt_rem_t[rem + 2];
+
+    uint64_t fidx = (mant_idx - 256) << 1;
+    flt64_t cbrtF_t = {.u = F_H_L[fidx]};
+    flt64_t cbrtF_h = {.u = F_H_L[fidx + 1]};
+
     flt64_t midx = {.u = mant_idx | 0x4330000000000000ULL};
     flt64_t mant = {.u = InverseTable[mant_idx - 256]};
     double     r = mant.d * (rdu.d - (midx.d - 4503599627370496.0) * ONE_BY_512);
@@ -176,14 +185,6 @@ ALM_PROTO_OPT(cbrt)(double x) {
     polyA += CBRT_EXP_COEFF_5 * r5;
     polyB += CBRT_EXP_COEFF_6 * r6;
     double poly = polyA + polyB;
-
-    /* cbrt_rem_h/t indexed by rem+2, covering rem in {-2,-1,0,1,2}. */
-    double cbrtRem_h = cbrt_rem_h[rem + 2];
-    double cbrtRem_t = cbrt_rem_t[rem + 2];
-
-    uint64_t fidx = (mant_idx - 256) << 1;
-    flt64_t cbrtF_t = {.u = F_H_L[fidx]};
-    flt64_t cbrtF_h = {.u = F_H_L[fidx + 1]};
 
     double bH = cbrtF_h.d * cbrtRem_h;
     double bT = cbrtF_t.d * cbrtRem_t + cbrtF_t.d * cbrtRem_h + cbrtRem_t * cbrtF_h.d;
