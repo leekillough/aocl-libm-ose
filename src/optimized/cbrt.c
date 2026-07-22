@@ -179,11 +179,11 @@ ALM_PROTO_OPT(cbrt)(double x) {
     double cbrtRem_t = CbrtRemT[rem + 2];
 
     uint64_t fidx = (mant_idx - 256) << 1;
-    double cbrtF_t = F_H_L[fidx];
-    double cbrtF_h = F_H_L[fidx + 1];
+    flt64_t cbrtF_t = { .u = F_H_L[fidx] };
+    flt64_t cbrtF_h = { .u = F_H_L[fidx + 1] };
 
-    double bH = cbrtF_h * cbrtRem_h;
-    double bT = (cbrtF_t * cbrtRem_t) + (cbrtF_t * cbrtRem_h) + (cbrtRem_t * cbrtF_h);
+    double bH = cbrtF_h.d * cbrtRem_h;
+    double bT = (cbrtF_t.d * cbrtRem_t) + (cbrtF_t.d * cbrtRem_h) + (cbrtRem_t * cbrtF_h.d);
 
     /* Two independent (poly*b + b) pairs keep both FP units busy at the final stage. */
     double ans = (poly * bT + bT) + (poly * bH + bH);
