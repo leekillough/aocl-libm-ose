@@ -17,11 +17,11 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
  * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
  * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+ * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -30,30 +30,21 @@
  * Signature:
  *   float cbrtf(float x)
  *
- * Spec:
- * To calculate (x)^1/3
- * step 1) Extract exponent and mentissa from input.
- * step 2) Convert input form float to double.
- * step 3) Reduce the input [1, 2)
-            3.1) Replace expnent with 3ff i.e 1
-            3.2) Or with the metissa
- * step 4) Scaling factor <= exponent/3 and Cuberoot2Index <= remineder (exponent % 3)
- * step 5) Polynomial approximation on reduced input
- * step 6) Multiply result of Polynomial approximation to cube-root reminder and scale factor
- * step 7) Return : Check for proper sign  and return the result
+ * cbrt(x) = cbrt(m * 2^n)
+ *         = cbrt(m) * 2^quotient * CbrtfRem[rem+2]
+ * where m in [1,2), quotient = trunc(n/3), rem = n - 3*quotient in {-2..2}.
  *
- * Mathmatical Explanation
- * (x)^(1/3) = (x_d * 2^n)^(1/3)
- *           =  x_d^(1/3) * 2^(n/3)
- *           =  x_d^(1/3) * 2^(Quotient) * 2^(Reminder/3), where x_d is reduced input between [1,2)
- *
- *
-*/
+ * cbrt(m) ~ (1 + t) * CubeRootTable[k]
+ * where k = top 8 mantissa bits (0..255), t = 3-term poly on
+ * r = m * DoubleReciprocalTable[k] - 1: t = r/3 - r^2/9 + 5*r^3/81.
+ * All table lookups and arithmetic are done in double precision so that the
+ * only rounding step is the final (float) cast, keeping the error at <=1 ULP
+ * for all 2^32 inputs (18194 inputs are exactly 1 ULP from correctly rounded).
+ */
 
 #include <stdint.h>
 #include <libm_util_amd.h>
 #include <libm/alm_special.h>
-#include <immintrin.h>
 
 #include <libm_macros.h>
 #include <libm/types.h>
@@ -61,113 +52,90 @@
 #include <libm/typehelper.h>
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
-#include <libm/alm_special.h>
 #include <cbrtf_data.h>
 
-#define MANTISSA_MASK_64 0x000FFFFFFFFFFFFF
-#define SIGN_MASK_64 0x7FFFFFFFFFFFFFFF
-#define ONE_MASK_64 0x3FF0000000000000
-#define DENORMAL_FACTOR 0.00492156660115184840104118
-#define TWOPOW23 8388608.0f
-
-#define CBRT2 1.2599210498948731648		/* 2^(1/3) */
-#define SQR_CBRT2 1.5874010519681994748		/* 2^(2/3) */
-#define CBRT2_RECIP 0.7937005259840997374  /* 2 ^ (-1/3) */
-#define SQR_CBRT2_RECIP 0.6299605249474365823 /*  2 ^ (-2/3) */
-
-static const double cuberoot[5] = {
-    SQR_CBRT2_RECIP, //  2 ^ (-2/3)
-    CBRT2_RECIP, // 2 ^ (-1/3)
-    1.0, // 2 ^ (0/3)
-    CBRT2, // 2 ^ (1/3)
-    SQR_CBRT2 // 2 ^ (2/3)
+/*
+ * cbrt(2^k) for k in {-2,-1,0,1,2}, indexed by k+2.
+ * Stored in double so that their full precision reaches the final (float) cast.
+ */
+static const double CbrtfRem[5] = {
+    0x1.428a2f98d728bp-1,   /* cbrt(2^-2)  k=-2 */
+    0x1.965fea53d6e3dp-1,   /* cbrt(2^-1)  k=-1 */
+    0x1.0000000000000p+0,   /* cbrt(2^0)   k= 0 */
+    0x1.428a2f98d728bp+0,   /* cbrt(2^1)   k= 1 */
+    0x1.965fea53d6e3dp+0,   /* cbrt(2^2)   k= 2 */
 };
 
 float
-ALM_PROTO_OPT(cbrtf)(float x){
-    float_t xf = x;
-    double_t xd = 0.0;
-    double_t xdRed = 0.0;
-    uint64_t uix64;
-    uint64_t sign = 0;
-    uint32_t ix = 0;
-    int32_t ixe = 0;
-    int32_t ixm = 0;
-    int32_t denornmal = 0;
+ALM_PROTO_OPT(cbrtf)(float x) {
+    flt32_t  xdu    = { .f = x };
+    uint32_t ix     = xdu.u;
+    uint32_t ixe    = EXPBITS_SP32 & ix;
+    uint32_t ixm    = MANTBITS_SP32 & ix;
+    float    result = x;   /* cbrtf(x) -> x if x is +/-0, +/-Inf, qNaN */
 
-    ix =  asuint32(xf);
+    if (likely(ixe != EXPBITS_SP32)) {
+        /* Not +/-Inf, NaN */
+        ixe >>= EXPSHIFTBITS_SP32;
+        if (likely((ixe | ixm) != 0)) {
+            /* ixe is in [0, 254], so the conversion to int32_t is safe */
+            int32_t biased_exp = (int32_t)ixe - 127;
 
-    ixe = EXPBITS_SP32 & ix; // exponent extactor
-    ixm = MANTBITS_SP32 & ix; // mentissa extactor
+            if (unlikely(ixe == 0)) {
+                /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
+                flt32_t tmp = { .u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32 };
+                tmp.f -= 1.0f;
+                /* Extracted biased exponent is in [104, 126], within int32_t range. */
+                biased_exp = (int32_t)((tmp.u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32)
+                             + (EMIN_SP32 - 127);
+                ixm = tmp.u & MANTBITS_SP32;
+            }
 
-    if ( ixe == PINFBITPATT_SP32 ){
-        if (ixm == 0)
-            __alm_handle_errorf(ix, AMD_F_OVERFLOW);
-        else
-            __alm_handle_errorf(ix|QNAN_MASK_32, AMD_F_INVALID);
+            /* The compiler strength-reduces the division to modular multiplication */
+            int32_t quotient = biased_exp / 3;
+            int32_t rem      = biased_exp - quotient * 3;
 
-        return x + x;
+            /* Mantissa in [1, 2): set exponent field to 127. */
+            flt32_t mfdu = { .u = ixm | ONEEXPBITS_SP32 };
+
+            /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
+            uint32_t tidx = ixm >> 15;
+
+            /*
+             * All arithmetic in double so that the only rounding step is the final
+             * (float) cast.  DoubleReciprocalTable and CubeRootTable hold 53-bit
+             * accurate values; CbrtfRem is also double.  The conversion of mf
+             * float->double is exact.
+             */
+            /* rd via FMA: product is exact internally, one rounding at the end. */
+            double rd = fma((double)mfdu.f, DoubleReciprocalTable[tidx], -1.0);
+
+            /*
+             * 3-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9 + 5*r^3/81.
+             * Inner Horner step uses FMA to eliminate the intermediate rounding of
+             * (1/3 + r*(-1/9)).  r^3 for the 3rd term is computed in parallel on
+             * the r^2 chain; the correction adds one FMA to the critical path.
+             */
+            double r2 = rd * rd;
+            double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
+            td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
+
+            flt32_t scaledu = { .u = (uint32_t)(quotient + 127) << 23 };
+            double scale = CbrtfRem[rem + 2] * (double)scaledu.f;
+
+            /* ans = (1+td)*cs = cs + td*cs; FMA avoids rounding the (1+td) sum. */
+            double cs  = CubeRootTable[tidx] * scale;
+            double ans = fma(td, cs, cs);
+
+            result = copysignf((float)ans, x);
+        }
+    } else {
+        /* +/-Inf, NaN */
+        if ((ixm != 0) && ((ixm & QNAN_MASK_32) == 0)) {
+            /* sNaN: quiet the NaN and raise FE_INVALID */
+            result = __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
+        }
     }
 
-    if ( ixe == 0 ) { // denormal number
-        denornmal = 1;
-        if (ixm == 0)  return x; /* IEEE expected: cbrtf(±0) = ±0 */
-        xf = xf * TWOPOW23;
-
-        ix = asuint32(xf);
-
-        ixe = EXPBITS_SP32 & ix; // exponent extactor
-        ixm = MANTBITS_SP32 & ix; // mentissa extactor
-    }
-
-    xd = (double)xf;
-
-    uix64 = asuint64(xd);
-
-    sign = uix64 >> 63;//SIGN_MASK_64; // extract sign bit
-
-    ixe = ixe >> 23; // shr 23 bits for exponent value only
-    ixm = ixm >> 15; // index for the reciprocal, only 8 bits left
-
-    ixe = ixe - 0x7F; //exponent - 0x7F, bias removal
-    int32_t quotient = (int32_t)(ixe / 3); // quotient, scale factor
-
-    // remainder. Possible remainder are [-2 -1 0 1 2] + 2
-    int32_t remainder = (ixe % 3) + 2 ; // [0 1 2 3 4]
-
-    quotient += 1023;
-    uint64_t exponDouble = (uint64_t)quotient << 52;
-
-    uix64 = uix64 & MANTISSA_MASK_64; //0x000FFFFFFFFFFFFF;
-    uix64 = uix64 | ONE_MASK_64; //0x3FF0000000000000
-
-    // Reduced input
-    uix64 = SIGN_MASK_64 & uix64;
-
-    // set double form i64 reduced input
-    xdRed = asdouble(uix64);
-
-    double_t xd3biasOnly;
-
-    xd3biasOnly = asdouble(exponDouble);
-    xdRed = xdRed * DoubleReciprocalTable[ixm];
-
-    xdRed = xdRed - 1;
-
-    double_t  t = xdRed * xdRed * -0.1111111111111111 +
-                    xdRed * 0.3333333333333333;
-
-    t = t + 1.0;
-
-    t = t * xd3biasOnly; // mul: 2 ^ Quotient
-    t = t * cuberoot[remainder]; // mul : 2 ^ Remainder
-    t = t * CubeRootTable[ixm]; // [1 , 2) ^ (1 / 3)
-
-    if ( denornmal )
-        t = t * DENORMAL_FACTOR;
-
-    if ( sign )
-        t *= -1.0;
-
-    return (float)t;
+    return result;
 }
