@@ -91,6 +91,7 @@
 double
 ALM_PROTO_OPT(cbrt)(double x) {
     uint64_t uix64;
+    uint64_t sign_mask = 0;
     uint64_t ix = 0;
     uint64_t ixe = 0;
     uint64_t ixm = 0;
@@ -101,6 +102,7 @@ ALM_PROTO_OPT(cbrt)(double x) {
     double r = 0;
 
     ix =  asuint64(x);
+    sign_mask = ix & SIGNBIT_DP64;
 
     ixe = EXPBITS_DP64 & ix;  // exponent extractor
     ixm = MANTBITS_DP64 & ix; // mantissa extractor
@@ -250,6 +252,6 @@ ALM_PROTO_OPT(cbrt)(double x) {
     double xd3biasOnly = asdouble(exponDouble);
     ans = ans * xd3biasOnly;
 
-    return copysign(ans, x);
+    return asdouble(asuint64(ans) | sign_mask);
 
 }
