@@ -80,131 +80,109 @@
 #define CBRT_EXP_COEFF_5    0x1.ee7113506ac13p-6   /*  22/729  */
 #define CBRT_EXP_COEFF_6   -0x1.8090d6221a247p-6   /* -154/6561 */
 
-/* cbrt(2^k) high and low for k in {-2,-1,0,1,2}; switch lets compiler use immediates. */
-#define CBRT_REM_H_N2   0x1.428a2f0000000p-1   /* cbrt(2^-2) high */
-#define CBRT_REM_T_N2   0x1.31ae515c447bbp-26  /* cbrt(2^-2) low  */
-#define CBRT_REM_H_N1   0x1.965fea0000000p-1   /* cbrt(2^-1) high */
-#define CBRT_REM_T_N1   0x1.4f5b8f20ac166p-27  /* cbrt(2^-1) low  */
-#define CBRT_REM_H_0    0x1.0000000000000p+0   /* cbrt(2^0)  high */
-#define CBRT_REM_T_0    0x0.0000000000000p+0   /* cbrt(2^0)  low  */
-#define CBRT_REM_H_P1   0x1.428a2f0000000p+0   /* cbrt(2^1)  high */
-#define CBRT_REM_T_P1   0x1.31ae515c447bbp-25  /* cbrt(2^1)  low  */
-#define CBRT_REM_H_P2   0x1.965fea0000000p+0   /* cbrt(2^2)  high */
-#define CBRT_REM_T_P2   0x1.4f5b8f20ac166p-26  /* cbrt(2^2)  low  */
+/*
+ * cbrt(2^k) high and low parts for k in {-2,-1,0,1,2}, indexed by k+2.
+ * Table lookup converts control dependence (branch on rem) into data
+ * dependence (indexed load), which the out-of-order core hides better
+ * than a branch when rem is uniformly random over {-2,-1,0,1,2}.
+ */
+static const double CbrtRemH[5] = {
+    0x1.428a2f0000000p-1,  /* cbrt(2^-2) high  k=-2 */
+    0x1.965fea0000000p-1,  /* cbrt(2^-1) high  k=-1 */
+    0x1.0000000000000p+0,  /* cbrt(2^0)  high  k= 0 */
+    0x1.428a2f0000000p+0,  /* cbrt(2^1)  high  k= 1 */
+    0x1.965fea0000000p+0,  /* cbrt(2^2)  high  k= 2 */
+};
+
+static const double CbrtRemT[5] = {
+    0x1.31ae515c447bbp-26, /* cbrt(2^-2) low   k=-2 */
+    0x1.4f5b8f20ac166p-27, /* cbrt(2^-1) low   k=-1 */
+    0x0.0000000000000p+0,  /* cbrt(2^0)  low   k= 0 */
+    0x1.31ae515c447bbp-25, /* cbrt(2^1)  low   k= 1 */
+    0x1.4f5b8f20ac166p-26, /* cbrt(2^2)  low   k= 2 */
+};
 
 double
 ALM_PROTO_OPT(cbrt)(double x) {
-    flt64_t  xdu    = { .d = x };
-    uint64_t ix     = xdu.u;
-    uint64_t ixe    = EXPBITS_DP64 & ix;
-    uint64_t ixm    = MANTBITS_DP64 & ix;
-    double   result = x;   /* cbrt(x) -> x if x is +/-0, +/-Inf, qNaN */
+    flt64_t  xdu = { .d = x };
+    uint64_t ix  = xdu.u;
+    uint64_t ixe = EXPBITS_DP64 & ix;
+    uint64_t ixm = MANTBITS_DP64 & ix;
 
-    if (likely(ixe != EXPBITS_DP64)) {
-        /* Not +/-Inf, NaN */
-        ixe >>= EXPSHIFTBITS_DP64;
-        if (likely((ixe | ixm) != 0)) {
-            /* ixe is in [0, 2046], so the conversion to int64_t is safe */
-            int64_t biased_exp = (int64_t)ixe - 1023;
-
-            if (unlikely(ixe == 0)) {
-                /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
-                flt64_t tmp = { .u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64 };
-                tmp.d -= 1.0;
-                /* Extracted biased exponent is in [971, 1022], within int64_t range. */
-                biased_exp = (int64_t)((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64)
-                             + (EMIN_DP64 - 1023);
-                ixm = tmp.u & MANTBITS_DP64;
-            }
-
-            /* The compiler strength-reduces the division to modular multiplication */
-            int64_t quotient = biased_exp / 3;
-            int64_t rem      = biased_exp - quotient * 3;
-
-            /* Reduced mantissa in [0.5, 1): built from ixm, which is correct after
-             * the subnormal path updates it above. */
-            flt64_t rdu = {.u = ixm | HALFEXPBITS_DP64};
-
-            /*
-             * 9-bit table index: upper 9 mantissa bits, rounded to nearest.
-             * Bit 43 is the rounding bit; bits 44..52 are the index.
-             */
-            uint64_t mant_idx = ((ixm >> 43) & 1) + ((ixm >> 44) | 0x100);
-
-            /*
-             * Convert mant_idx to double without vcvtsi2sd.
-             * mant_idx is in [256, 512].  OR it into the mantissa of 2^52 then
-             * subtract the magic constant -- IEEE 754 exact integer representability
-             * guarantees the result equals mant_idx exactly.
-             */
-            flt64_t midx = { .u = mant_idx | EXP_VAL_52_DP64 };
-            flt64_t mant = { .u = InverseTable[mant_idx - 256] };
-
-            /* idx_frac = mant_idx/512 exactly: integer * 2^-9, no rounding. */
-            double idx_frac = (midx.d - 0x1p52) * ONE_BY_512;
-            /*
-             * r = mant * (rdu - idx_frac).  The subtraction is exact (both
-             * operands are exactly representable doubles and their difference
-             * fits in 52 bits), so FMA buys no accuracy here and costs an
-             * extra vmulsd on Zen 5.
-             */
-            double r = mant.d * (rdu.d - idx_frac);
-
-            /*
-             * Degree-6 polynomial: c1*r + c2*r^2 + ... + c6*r^6.
-             * Two independent chains (odd A, even B) keep both FP units busy on Zen 5.
-             */
-            double r2 = r * r;
-            double r3 = r2 * r;
-            double r4 = r2 * r2;
-            double r5 = r4 * r;
-            double r6 = r3 * r3;
-
-            double polyA = CBRT_EXP_COEFF_1 * r;
-            double polyB = CBRT_EXP_COEFF_2 * r2;
-            polyA = CBRT_EXP_COEFF_3 * r3 + polyA;
-            polyB = CBRT_EXP_COEFF_4 * r4 + polyB;
-            polyA = CBRT_EXP_COEFF_5 * r5 + polyA;
-            polyB = CBRT_EXP_COEFF_6 * r6 + polyB;
-            double poly = polyA + polyB;
-
-            double cbrtRem_h, cbrtRem_t;
-            switch (rem) {
-            case -2: cbrtRem_h = CBRT_REM_H_N2; cbrtRem_t = CBRT_REM_T_N2; break;
-            case -1: cbrtRem_h = CBRT_REM_H_N1; cbrtRem_t = CBRT_REM_T_N1; break;
-            default: cbrtRem_h = CBRT_REM_H_0;  cbrtRem_t = CBRT_REM_T_0;  break;
-            case  1: cbrtRem_h = CBRT_REM_H_P1; cbrtRem_t = CBRT_REM_T_P1; break;
-            case  2: cbrtRem_h = CBRT_REM_H_P2; cbrtRem_t = CBRT_REM_T_P2; break;
-            }
-
-            uint64_t fidx = (mant_idx - 256) << 1;
-            double cbrtF_t = F_H_L[fidx];
-            double cbrtF_h = F_H_L[fidx + 1];
-
-            double bH = cbrtF_h * cbrtRem_h;
-            /* bT = F_t*Rem_t + F_t*Rem_h + Rem_t*F_h; FMA eliminates two intermediate roundings. */
-            double bT = fma(cbrtF_t, cbrtRem_t, fma(cbrtF_t, cbrtRem_h, cbrtRem_t * cbrtF_h));
-
-            /* ans = (1+poly)*bH + (1+poly)*bT; FMA avoids rounding (1+poly). */
-            double ans = fma(poly, bH, bH) + fma(poly, bT, bT);
-
-            /*
-             * Scale by 2^quotient: construct the scale as a pure-exponent double via
-             * integer shift and union-load (no vcvtsi2sd, no domain crossing).
-             * The integer work overlaps with the polynomial FP chain, so scale.d is
-             * ready before the multiply reaches the execution unit.
-             * copysign(ans, x) is a single vandpd/vorpd pair, cheaper than a branch.
-             */
-            flt64_t scale = {.u = (uint64_t)(quotient + 1023) << 52};
-            result = copysign(ans * scale.d, x);
-        }
-    } else {
-        /* +/-Inf, NaN */
-        if ((ixm != 0) && ((ixm & QNAN_MASK_64) == 0)) {
-            /* sNaN: quiet the NaN and raise FE_INVALID */
-            result = __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
-        }
+    /* +/-Inf and NaN: early exit, flat path for normals below. */
+    if (unlikely(ixe == EXPBITS_DP64)) {
+        if ((ixm != 0) && ((ixm & QNAN_MASK_64) == 0))
+            return __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
+        return x;  /* +/-Inf -> +/-Inf, qNaN -> qNaN */
     }
 
-    return result;
+    ixe >>= EXPSHIFTBITS_DP64;
+
+    /* +/-0 */
+    if (unlikely((ixe | ixm) == 0))
+        return x;
+
+    int64_t biased_exp = (int64_t)ixe - 1023;
+
+    if (unlikely(ixe == 0)) {
+        /* Subnormal: reinterpret as 1.mantissa - 1.0 to extract true exponent. */
+        flt64_t tmp = { .u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64 };
+        tmp.d -= 1.0;
+        biased_exp = (int64_t)((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64)
+                     + (EMIN_DP64 - 1023);
+        ixm = tmp.u & MANTBITS_DP64;
+    }
+
+    /* The compiler strength-reduces the division to modular multiplication. */
+    int64_t quotient = biased_exp / 3;
+    int64_t rem      = biased_exp - quotient * 3;
+
+    /* Reduced mantissa in [0.5, 1). */
+    flt64_t rdu = { .u = ixm | HALFEXPBITS_DP64 };
+
+    /*
+     * 9-bit table index: upper 9 mantissa bits, rounded to nearest.
+     * Bit 43 is the rounding bit; bits 44..52 are the unrounded index.
+     */
+    uint64_t mant_idx = ((ixm >> 43) & 1) + ((ixm >> 44) | 0x100);
+
+    /*
+     * Convert mant_idx to double without vcvtsi2sd: OR into the mantissa
+     * of 2^52 then subtract the magic constant.  IEEE 754 exact integer
+     * representability guarantees the result equals mant_idx exactly.
+     */
+    flt64_t midx = { .u = mant_idx | EXP_VAL_52_DP64 };
+    flt64_t mant = { .u = InverseTable[mant_idx - 256] };
+
+    double idx_frac = (midx.d - 0x1p52) * ONE_BY_512;
+    double r = mant.d * (rdu.d - idx_frac);
+
+    double r2 = r * r;
+    double r3 = r2 * r;
+    double r4 = r2 * r2;
+    double r5 = r4 * r;
+    double r6 = r3 * r3;
+
+    double poly = CBRT_EXP_COEFF_1 * r;
+    poly += CBRT_EXP_COEFF_2 * r2;
+    poly += CBRT_EXP_COEFF_3 * r3;
+    poly += CBRT_EXP_COEFF_4 * r4;
+    poly += CBRT_EXP_COEFF_5 * r5;
+    poly += CBRT_EXP_COEFF_6 * r6;
+
+    double cbrtRem_h = CbrtRemH[rem + 2];
+    double cbrtRem_t = CbrtRemT[rem + 2];
+
+    uint64_t fidx = (mant_idx - 256) << 1;
+    double cbrtF_t = F_H_L[fidx];
+    double cbrtF_h = F_H_L[fidx + 1];
+
+    double bH = cbrtF_h * cbrtRem_h;
+    double bT = (cbrtF_t * cbrtRem_t) + (cbrtF_t * cbrtRem_h) + (cbrtRem_t * cbrtF_h);
+
+    double ans = (poly * bT) + bT + (poly * bH) + bH;
+
+    /* Scale by 2^quotient via integer-shift union load; no domain crossing. */
+    flt64_t scale = { .u = (uint64_t)(quotient + 1023) << 52 };
+    return copysign(ans * scale.d, x);
 }
