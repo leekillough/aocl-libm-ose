@@ -103,11 +103,14 @@ ALM_PROTO_OPT(cbrtf)(float x) {
     /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
     uint32_t tidx = ixm >> 15;
 
-    /* Issue all three table loads before the FP chain to hide cache-miss latency.
-     * scale is independent of rd/td and can be computed in parallel with them. */
+    /* Both table values for tidx are adjacent in CbrtfTable, guaranteed in the
+     * same 64-byte cache line.  Load them and CbrtfRem before the FP chain so
+     * the CPU can hide cache-miss latency while the integer work completes.
+     * scale is fully independent of rd/td and overlaps the polynomial chain. */
+    uint32_t tidx2  = tidx * 2;
+    double recip    = CbrtfTable[tidx2];
+    double cubeRoot = CbrtfTable[tidx2 + 1];
     double cbrtfRem = CbrtfRem[rem + 2];
-    double cubeRoot = CubeRootTable[tidx];
-    double recip    = DoubleReciprocalTable[tidx];
 
     flt32_t scaledu = { .u = (uint32_t)(quotient + 127) << 23 };
     double scale = cbrtfRem * (double)scaledu.f;
@@ -119,12 +122,11 @@ ALM_PROTO_OPT(cbrtf)(float x) {
     double rd = fma((double)mfdu.f, recip, -1.0);
 
     /*
-     * 3-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9 + 5*r^3/81.
-     * Inner Horner step uses FMA; r^3 correction runs in parallel on the r^2 chain.
+     * 2-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9.
+     * The omitted r^3 term (5r^3/81) contributes at most 5*(1/512)^3/81 ~ 3e-12
+     * relative error, far below 0.5 ULP of float (~6e-8), so accuracy is unaffected.
      */
-    double r2 = rd * rd;
     double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
-    td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
 
     /* cs = CubeRootTable[tidx] * scale is ready before td; ans uses both. */
     double cs  = cubeRoot * scale;
