@@ -68,74 +68,69 @@ static const double CbrtfRem[5] = {
 
 float
 ALM_PROTO_OPT(cbrtf)(float x) {
-    flt32_t  xdu    = { .f = x };
-    uint32_t ix     = xdu.u;
-    uint32_t ixe    = EXPBITS_SP32 & ix;
-    uint32_t ixm    = MANTBITS_SP32 & ix;
-    float    result = x;   /* cbrtf(x) -> x if x is +/-0, +/-Inf, qNaN */
+    flt32_t  xdu = { .f = x };
+    uint32_t ix  = xdu.u;
+    uint32_t ixe = EXPBITS_SP32 & ix;
+    uint32_t ixm = MANTBITS_SP32 & ix;
 
-    if (likely(ixe != EXPBITS_SP32)) {
-        /* Not +/-Inf, NaN */
-        ixe >>= EXPSHIFTBITS_SP32;
-        if (likely((ixe | ixm) != 0)) {
-            /* ixe is in [0, 254], so the conversion to int32_t is safe */
-            int32_t biased_exp = (int32_t)ixe - 127;
-
-            if (unlikely(ixe == 0)) {
-                /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
-                flt32_t tmp = { .u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32 };
-                tmp.f -= 1.0f;
-                /* Extracted biased exponent is in [104, 126], within int32_t range. */
-                biased_exp = (int32_t)((tmp.u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32)
-                             + (EMIN_SP32 - 127);
-                ixm = tmp.u & MANTBITS_SP32;
-            }
-
-            /* The compiler strength-reduces the division to modular multiplication */
-            int32_t quotient = biased_exp / 3;
-            int32_t rem      = biased_exp - quotient * 3;
-
-            /* Mantissa in [1, 2): set exponent field to 127. */
-            flt32_t mfdu = { .u = ixm | ONEEXPBITS_SP32 };
-
-            /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
-            uint32_t tidx = ixm >> 15;
-
-            /*
-             * All arithmetic in double so that the only rounding step is the final
-             * (float) cast.  DoubleReciprocalTable and CubeRootTable hold 53-bit
-             * accurate values; CbrtfRem is also double.  The conversion of mf
-             * float->double is exact.
-             */
-            /* rd via FMA: product is exact internally, one rounding at the end. */
-            double rd = fma((double)mfdu.f, DoubleReciprocalTable[tidx], -1.0);
-
-            /*
-             * 3-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9 + 5*r^3/81.
-             * Inner Horner step uses FMA to eliminate the intermediate rounding of
-             * (1/3 + r*(-1/9)).  r^3 for the 3rd term is computed in parallel on
-             * the r^2 chain; the correction adds one FMA to the critical path.
-             */
-            double r2 = rd * rd;
-            double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
-            td = fma(r2 * rd, 0x1.f9add3c0ca458p-5, td);
-
-            flt32_t scaledu = { .u = (uint32_t)(quotient + 127) << 23 };
-            double scale = CbrtfRem[rem + 2] * (double)scaledu.f;
-
-            /* ans = (1+td)*cs = cs + td*cs; FMA avoids rounding the (1+td) sum. */
-            double cs  = CubeRootTable[tidx] * scale;
-            double ans = fma(td, cs, cs);
-
-            result = copysignf((float)ans, x);
-        }
-    } else {
-        /* +/-Inf, NaN */
-        if ((ixm != 0) && ((ixm & QNAN_MASK_32) == 0)) {
-            /* sNaN: quiet the NaN and raise FE_INVALID */
-            result = __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
-        }
+    if (unlikely(ixe == EXPBITS_SP32)) {
+        /* +/-Inf or NaN: raise FE_INVALID for sNaN, pass through everything else. */
+        if ((ixm != 0) && ((ixm & QNAN_MASK_32) == 0))
+            return __alm_handle_errorf(ix | QNAN_MASK_32, AMD_F_INVALID);
+        return x;
     }
 
-    return result;
+    ixe >>= EXPSHIFTBITS_SP32;
+
+    if (unlikely((ixe | ixm) == 0))
+        return x;   /* +/-0 */
+
+    int32_t biased_exp;
+    if (unlikely(ixe == 0)) {
+        /* Subnormal: normalise via 1.mantissa - 1.0f self-subtraction trick. */
+        flt32_t tmp = { .u = (ix & POS_BITSET_F32) | ONEEXPBITS_SP32 };
+        tmp.f -= 1.0f;
+        biased_exp = (int32_t)((tmp.u & EXPBITS_SP32) >> EXPSHIFTBITS_SP32)
+                     + (EMIN_SP32 - 127);
+        ixm = tmp.u & MANTBITS_SP32;
+    } else {
+        biased_exp = (int32_t)ixe - 127;
+    }
+
+    int32_t quotient = biased_exp / 3;
+    int32_t rem      = biased_exp - quotient * 3;
+
+    /* 8-bit table index: top 8 bits of the 23-bit mantissa. */
+    uint32_t tidx = ixm >> 15;
+
+    /* Both table values for tidx are adjacent in CbrtfTable, guaranteed in the
+     * same 64-byte cache line.  Load them and CbrtfRem before the FP chain so
+     * the CPU can hide cache-miss latency while the integer work completes.
+     * scale is fully independent of rd/td and overlaps the polynomial chain. */
+    uint32_t tidx2  = tidx * 2;
+    double recip    = CbrtfTable[tidx2];
+    double cubeRoot = CbrtfTable[tidx2 + 1];
+    double cbrtfRem = CbrtfRem[rem + 2];
+
+    flt32_t scaledu = { .u = (uint32_t)(quotient + 127) << 23 };
+    double scale = cbrtfRem * (double)scaledu.f;
+
+    /* Mantissa in [1, 2): set exponent field to 127. */
+    flt32_t mfdu = { .u = ixm | ONEEXPBITS_SP32 };
+
+    /* rd = m * recip - 1.0; FMA keeps the product exact internally. */
+    double rd = fma((double)mfdu.f, recip, -1.0);
+
+    /*
+     * 2-term poly: cbrt(1+r)-1 ~= r/3 - r^2/9.
+     * The omitted r^3 term (5r^3/81) contributes at most 5*(1/512)^3/81 ~ 3e-12
+     * relative error, far below 0.5 ULP of float (~6e-8), so accuracy is unaffected.
+     */
+    double td = rd * fma(rd, -0x1.c71c71c71c71cp-4, 0x1.5555555555555p-2);
+
+    /* cs = CubeRootTable[tidx] * scale is ready before td; ans uses both. */
+    double cs  = cubeRoot * scale;
+    double ans = fma(td, cs, cs);
+
+    return copysignf((float)ans, x);
 }

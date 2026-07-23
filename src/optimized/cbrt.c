@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2024 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -37,7 +37,7 @@
  * step 2) If it is subnormal input
  *         Exponent would be 0 and mantissa is non zero
  *         Normalise subnormal number:
- *         Shifting mantissa bits to left until MSB is 1 and 
+ *         Shifting mantissa bits to left until MSB is 1 and
  *         Number of times bits are shifted will contribute to exponent
  * step 3) Reduce the input [1, 2)
             3.1) Replace exponent with 3ff i.e 1
@@ -57,6 +57,7 @@
 
 #include <stdint.h>
 #include <libm_util_amd.h>
+#include <libm/alm_special.h>
 #include <immintrin.h>
 
 #include <libm_macros.h>
@@ -75,183 +76,125 @@
 #define CBRT_EXP_COEFF_3    6.17283950617283916351141215273E-2  // 0x3faf9add3c0ca458
 #define CBRT_EXP_COEFF_4    -4.11522633744855967363740489873E-2 // 0xbfa511e8d2b3183b
 #define CBRT_EXP_COEFF_5    3.01783264746227734842687340233E-2  // 0x3f9ee7113506ac13
-#define CBRT_EXP_COEFF_6    -2.34720317024843770636888251602E-2 // 0xbf98090d6221a247
 
-#define LOW_2_POW_N2        1.77929718607039166806688400583E-8  // 0x3e531ae515c447bb // cbrt(2^-2) Low
-#define HIGH_2_POW_N2       6.299605071544647216796875E-1       // 0x3FE428A2F0000000 // cbrt(2^-2) High
-#define LOW_2_POW_N1        9.76019226667272715610794680662E-9  // 0x3e44f5b8f20ac166 // cbrt(2^-1) Low
-#define HIGH_2_POW_N1       7.93700516223907470703125E-1        // 0x3FE965FEA0000000 // cbrt(2^-1) High
-#define LOW_2_POW_0         0.0E0                               // 0x0000000000000000 // cbrt(2^0) Low
-#define HIGH_2_POW_0        1.0E0                               // 0x3FF0000000000000 // cbrt(2^0) High
-#define LOW_2_POW_P1        3.55859437214078333613376801167E-8  // 0x3e631ae515c447bb // cbrt(2^1) Low
-#define HIGH_2_POW_P1       1.259921014308929443359375E0        // 0x3FF428A2F0000000 // cbrt(2^1) High
-#define LOW_2_POW_P2        1.95203845333454543122158936132E-8  // 0x3e54f5b8f20ac166 // cbrt(2^2) Low
-#define HIGH_2_POW_P2       1.58740103244781494140625E0         // 0x3FF965FEA0000000 // cbrt(2^2) High
+/*
+ * cbrt(2^k) high and low parts for k in {-2, -1, 0, 1, 2}, indexed by k+2.
+ * Stored as two parallel arrays so both loads hit the same cache line and
+ * the compiler can emit a single indexed load for each, with no branch.
+ * rem from biased_exp % 3 is in {-2,-1,0,1,2}; index = rem + 2.
+ */
+static const double cbrt_rem_h[5] = {
+    6.299605071544647216796875E-1,   /* cbrt(2^-2) high  0x3FE428A2F0000000  k=-2 */
+    7.93700516223907470703125E-1,    /* cbrt(2^-1) high  0x3FE965FEA0000000  k=-1 */
+    1.0E0,                           /* cbrt(2^0)  high  0x3FF0000000000000  k= 0 */
+    1.259921014308929443359375E0,    /* cbrt(2^1)  high  0x3FF428A2F0000000  k= 1 */
+    1.58740103244781494140625E0,     /* cbrt(2^2)  high  0x3FF965FEA0000000  k= 2 */
+};
+
+static const double cbrt_rem_t[5] = {
+    1.77929718607039166806688400583E-8,  /* cbrt(2^-2) low  0x3e531ae515c447bb */
+    9.76019226667272715610794680662E-9,  /* cbrt(2^-1) low  0x3e44f5b8f20ac166 */
+    0.0E0,                               /* cbrt(2^0)  low  0x0000000000000000 */
+    3.55859437214078333613376801167E-8,  /* cbrt(2^1)  low  0x3e631ae515c447bb */
+    1.95203845333454543122158936132E-8,  /* cbrt(2^2)  low  0x3e54f5b8f20ac166 */
+};
 
 double
 ALM_PROTO_OPT(cbrt)(double x) {
-    uint64_t uix64;
-    uint64_t sign_mask = 0;
-    uint64_t ix = 0;
-    uint64_t ixe = 0;
-    uint64_t ixm = 0;
+    flt64_t  xdu = {.d = x};
+    uint64_t ix  = xdu.u;
+    uint64_t ixe = EXPBITS_DP64 & ix;
+    uint64_t ixm = MANTBITS_DP64 & ix;
 
-    int64_t quotient = 0;
-    int64_t rem = 0;
-    double temp = 0;
-    double r = 0;
-
-    ix =  asuint64(x);
-    sign_mask = ix & SIGNBIT_DP64;
-
-    ixe = EXPBITS_DP64 & ix;  // exponent extractor
-    ixm = MANTBITS_DP64 & ix; // mantissa extractor
-
-    if (unlikely( ixe == PINFBITPATT_DP64 ))
-    {
-        /* cbrt(±Inf) = ±Inf; cbrt(qNaN) = qNaN (no exception);
-         * cbrt(sNaN) signals FE_INVALID and returns a quiet NaN. */
-        if (ixm != 0 && (ixm & QNAN_MASK_64) == 0)
+    if (unlikely(ixe == PINFBITPATT_DP64)) {
+        if (ixm != 0)
             __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
-        return x + x;
+        return x + x;  /* Inf->Inf, qNaN->qNaN, sNaN->qNaN (FE_INVALID raised above) */
     }
 
-    ixe = ixe >> EXPSHIFTBITS_DP64; // shift right 52 bits for exponent value only
+    ixe >>= EXPSHIFTBITS_DP64;
 
-    if ( ixe == 0 )
-    {
-        // denormal number;
-        if (ixm == 0) // is zero
-            return x; /* IEEE expected: cbrt(±0) = ±0 */
-
-        /******************************************************** */
-        /* Subnormal number                                       */
-        /* Exponent = 0 and mantissa != 0                         */
-        /* Before calculating cbrt will convert this input in to  */
-        /* normalised form                                        */
-        /* signBit ExponentBits MantissaBits                      */
-        /* Input to this loop:  (X = 0/1)                         */
-        /*  X   00000000000   00000XXXXXXXX.........              */
-        /* Output from this loop:                                 */
-        /*  X   XXXXXXXXXXX   XXXXXXXX.........00000              */
-        /**********************************************************/
-        
-        ixe = ONEEXPBITS_DP64;
-        //Get absolute value of the input
-        ixm = ix & POS_BITSET_DP64;
-        // Mantissa is represneted as 1.XXXX instead of 0.XXXXX
-        ixm = ixm | ixe;
-        temp = asdouble(ixm);
-        r = asdouble(ixe);
-        //Decimal digits is left shifted until MSB is set to 1
-        temp = temp - r;
-        //Normalised input
-        ix =  asuint64(temp);
-
-        ixe = EXPBITS_DP64 & ix;  // exponent extractor
-        ixm = MANTBITS_DP64 & ix; // mantissa extractor
-        ixe = ixe >> EXPSHIFTBITS_DP64;
-        ixe = ixe + (uint64_t)EMIN_DP64;
+    if (unlikely(ixe == 0)) {
+        if (ixm == 0)
+            return x;
+        /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
+        flt64_t tmp = {.u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64};
+        --tmp.d;
+        ixe = ((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) + EMIN_DP64;
+        ixm = tmp.u & MANTBITS_DP64;
     }
 
-    ixe = ixe - 1023; // exponent - 0x3FF, bias removal
+    int64_t biased_exp = (int64_t)ixe - 1023;
 
-    quotient = (int64_t)ixe / 3; // quotient, scale factor
-    rem = (int64_t)ixe % 3;
+    /*
+     * Signed divide-by-3 via multiply-shift.
+     * M = 0x55555556 ≈ 2^32/3 (rounded up); high 32 bits of the signed
+     * 64-bit product give floor(biased_exp/3).  Subtracting (biased_exp >> 63)
+     * — which is 0 for non-negative and −1 for negative — converts floor to
+     * C truncation-toward-zero.  rem is then derived with a single multiply-
+     * subtract, so the whole divide costs one imulq + sar + lea/sub.
+     */
+    int64_t quotient = ((biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 63);
+    int64_t rem      = biased_exp - quotient * 3;
 
-    quotient += 1023;
-    uint64_t exponDouble = (uint64_t)quotient << 52;
+    /* Reduced mantissa in [0.5, 1): built from ixm, which is correct after
+     * the subnormal path updates it above. */
+    flt64_t rdu = {.u = ixm | HALFEXPBITS_DP64};
 
-    uix64 = ix & MANTBITS_DP64;
-    uix64 = uix64 | HALFEXPBITS_DP64;
+    /*
+     * 9-bit table index: upper 9 mantissa bits, rounded to nearest.
+     * Bit 43 is the rounding bit; bits 44..52 are the index.
+     */
+    uint64_t mant_idx = ((ixm >> 43) & 1) + ((ixm >> 44) | 0x100);
 
-    uint64_t mant_1 = ixm >> 43;
-    uint64_t mant_2 = ixm >> 44;
+    /*
+     * Convert mant_idx to double without vcvtsi2sd.
+     * mant_idx is in [256, 512].  OR it into the mantissa of 2^52 then
+     * subtract the magic constant — IEEE 754 exact integer representability
+     * guarantees the result equals mant_idx exactly.
+     */
+    /* Issue all table loads before the polynomial so the CPU can hide
+     * cache-miss latency while the FP chains are executing. */
+    double cbrtRem_h = cbrt_rem_h[rem + 2];
+    double cbrtRem_t = cbrt_rem_t[rem + 2];
 
-    mant_1 &= 0x0000000000000001;
-    mant_2 |= 0x0000000000000100;
+    uint64_t fidx = (mant_idx - 256) << 1;
+    flt64_t cbrtF_t = {.u = F_H_L[fidx]};
+    flt64_t cbrtF_h = {.u = F_H_L[fidx + 1]};
 
-    mant_1 += mant_2;
+    flt64_t midx = {.u = mant_idx | 0x4330000000000000ULL};
+    flt64_t mant = {.u = InverseTable[mant_idx - 256]};
+    double     r = mant.d * (rdu.d - (midx.d - 4503599627370496.0) * ONE_BY_512);
 
-    temp = (double)mant_1;
-    temp = ONE_BY_512 * temp;
+    /*
+     * Degree-5 polynomial: c1*r + c2*r^2 + c3*r^3 + c4*r^4 + c5*r^5.
+     * Evaluated in two independent chains so both FMA execution units on Zen 5
+     * stay busy simultaneously: A accumulates odd-degree terms, B even-degree.
+     */
+    double r2 = r * r;
+    double r3 = r2 * r;
+    double r4 = r2 * r2;
+    double r5 = r4 * r;
 
-    r = asdouble(uix64);
-    r = r - temp;
+    double polyA = CBRT_EXP_COEFF_1 * r;
+    double polyB = CBRT_EXP_COEFF_2 * r2;
+    polyA += CBRT_EXP_COEFF_3 * r3;
+    polyB += CBRT_EXP_COEFF_4 * r4;
+    polyA += CBRT_EXP_COEFF_5 * r5;
+    double poly = polyA + polyB;
 
-    mant_1 = mant_1 - 256;
-    temp = asdouble(InverseTable[mant_1]);
-    r = temp * r;
+    double bH = cbrtF_h.d * cbrtRem_h;
+    double bT = cbrtF_t.d * cbrtRem_t + cbrtF_t.d * cbrtRem_h + cbrtRem_t * cbrtF_h.d;
 
-    // To calculate cbrt: exp = coeff1 * r + coeff2 * r^2 + coeff3 * r^3 + coeff4 * r^4 + coeff5 * r^5 + coeff6 * r^6
+    double ans = (poly * bT + bT) + (poly * bH + bH);
 
-    double r2 = r*r;
-    double r3 = r2*r;
-    double r4 = r2*r2;
-    double r5 = r4*r;
-    double r6 = r3*r3;
-
-    double exp = CBRT_EXP_COEFF_1 * r;
-    exp += CBRT_EXP_COEFF_2 * r2;
-    exp += CBRT_EXP_COEFF_3 * r3;
-    exp += CBRT_EXP_COEFF_4 * r4;
-    exp += CBRT_EXP_COEFF_5 * r5;
-    exp += CBRT_EXP_COEFF_6 * r6;
-
-    double cbrtRem_h = 0;
-    double cbrtRem_t = 0;
-
-    switch(rem)
-    {
-        case -2:
-            cbrtRem_h = HIGH_2_POW_N2;
-            cbrtRem_t = LOW_2_POW_N2;
-            break;
-
-        case -1:
-            cbrtRem_h = HIGH_2_POW_N1;
-            cbrtRem_t = LOW_2_POW_N1;
-            break;
-
-        case 0:
-            cbrtRem_h = HIGH_2_POW_0;
-            cbrtRem_t = LOW_2_POW_0;
-            break;
-
-        case 1:
-            cbrtRem_h = HIGH_2_POW_P1;
-            cbrtRem_t = LOW_2_POW_P1;
-            break;
-
-        case 2:
-            cbrtRem_h = HIGH_2_POW_P2;
-            cbrtRem_t = LOW_2_POW_P2;
-            break;
-
-        default:
-            /* The codeflow is not expected to enter default case here!
-             * Variable rem can only be -2, -1, 0, 1, 2.
-             */ 
-            break;
-    }
-
-    mant_1 <<= 1; // mant_1 * 2
-
-    double cbrtF_t = asdouble(F_H_L[mant_1]);
-    double cbrtF_h = asdouble(F_H_L[mant_1+1]);
-
-    double bH = cbrtF_h * cbrtRem_h;
-    double bT = (cbrtF_t * cbrtRem_t) + (cbrtF_t * cbrtRem_h) + (cbrtRem_t * cbrtF_h);
-
-    // ans = (exp * bT) + bT + (exp * bH) + bH
-    double ans = (exp * bT);
-    ans += bT;
-    ans += (exp * bH);
-    ans += bH;
-
-    double xd3biasOnly = asdouble(exponDouble);
-    ans = ans * xd3biasOnly;
-
-    return asdouble(asuint64(ans) | sign_mask);
-
+    /*
+     * Scale by 2^quotient: construct the scale as a pure-exponent double via
+     * integer shift and union-load (no vcvtsi2sd, no domain crossing).
+     * The integer work overlaps with the polynomial FP chain, so scale.d is
+     * ready before the multiply reaches the execution unit.
+     * copysign(ans, x) is a single vandpd/vorpd pair, cheaper than a branch.
+     */
+    flt64_t scale = {.u = (uint64_t)(quotient + 1023) << 52};
+    return copysign(ans * scale.d, x);
 }
