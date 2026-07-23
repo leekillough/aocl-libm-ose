@@ -39,8 +39,8 @@
  *
  * Main path (|x| >= |y|):
  *   Compute rem = Mx * 2^shift mod My via Rem128P (same as fmod), but
- *   Rem128P also returns the integer quotient.  The XOR of LSBs of all
- *   quotients across all reduction steps gives the parity of n.
+ *   Rem128P also returns the integer quotient.  The sum of all quotients
+ *   across all reduction steps gives the parity of n.
  *   After the reduction:
  *     2*rem < My: keep rem; sign(result) = sign(x).
  *     2*rem > My: use rem = My-rem (round up); sign(result) = -sign(x).
@@ -51,11 +51,6 @@
  *   n is 0 or 1.  The comparison 2|x| vs |y| is done in float arithmetic,
  *   which is exact here: doubling is exact for finite non-max doubles, and
  *   the Sterbenz subtraction |y|-|x| is exact when |y|/2 < |x| < |y|.
- *   (The rare case that doubling overflows for very large |x| near max
- *   finite still gives a correct comparison result, though FE_OVERFLOW
- *   may be raised; this affects only inputs where |x| has maximum exponent
- *   and |y| is slightly larger than |x| -- an extremely rare edge case.)
- *
  */
 
 #include <stdint.h>
@@ -95,37 +90,46 @@ typedef struct
     int e;       // biased exponent
 } F64ExpMan;
 
+// Extract a double precision value into a mantissa and biased exponent
+// Handles subnormal values
 static inline F64ExpMan F64Extract(uint64_t fax)
 {
     int lz;
     return unlikely(fax < POS_LNORMAL_F64) ?
         lz = CLZ64(fax),
-        (F64ExpMan) {
+        (F64ExpMan) {  // Subnormal values; shift leftmost 1 into implied bit
             .m = fax << (lz - (64 - MANTLENGTH_DP64)),
             .e = (64 - MANTLENGTH_DP64) + 1 - lz
         } :
-        (F64ExpMan) {
+        (F64ExpMan) {  // Normal values
             .m = (fax & MANTBITS_DP64) | IMPBIT_DP64,
             .e = (int)(fax >> EXPSHIFTBITS_DP64)
         };
 }
 
-/* Rem128P: same as Rem128 but also stores the quotient in *quot.
-   The XOR of (quot & 1) across all steps gives the parity of n. */
+typedef struct
+{
+    uint64_t quot;
+    uint64_t rem;
+} QuotRem64;
+
+/* Rem128P: same as Rem128 but also returns the quotient.
+   The sum of quot across all steps gives the parity of n. */
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
 
 /* hi = Mx >> (64-d) < 2^52 <= My for d in [0,63] when My has implicit bit */
 #define MAXSHIFT 63
 
-static inline uint64_t Rem128P(uint64_t Mx, uint64_t My, int d, uint64_t *quot)
+static inline QuotRem64 Rem128P(uint64_t Mx, uint64_t My, int d)
 {
-    uint64_t rem;
+    QuotRem64 qr;
     uint64_t hi = (d != 0) ? Mx >> (64 - d) : 0;
     uint64_t lo = Mx << d;
-    __asm__("divq %[divisor]"
-            : "=a"(*quot), "=d"(rem)
-            : "0"(lo), "1"(hi), [divisor] "r"(My));
-    return rem;
+    __asm__ volatile("divq %[divisor]"
+            : "=a"(qr.quot), "=d"(qr.rem)
+            : "0"(lo), "1"(hi), [divisor] "r"(My)
+            : "cc");
+    return qr;
 }
 
 #elif defined(__SIZEOF_INT128__)
@@ -133,11 +137,13 @@ static inline uint64_t Rem128P(uint64_t Mx, uint64_t My, int d, uint64_t *quot)
 /* (Mx << d) < 2^128 for d <= 75 since Mx < 2^53; remainder fits in uint64_t */
 #define MAXSHIFT (128 - MANTLENGTH_DP64)
 
-static inline uint64_t Rem128P(uint64_t Mx, uint64_t My, int d, uint64_t *quot)
+static inline QuotRem64 Rem128P(uint64_t Mx, uint64_t My, int d)
 {
     __uint128_t dividend = (__uint128_t)Mx << d;
-    *quot = (uint64_t)(dividend / My);
-    return (uint64_t)(dividend % My);
+    return (QuotRem64) {
+        .quot = (uint64_t)(dividend / My),
+        .rem = (uint64_t)(dividend % My)
+    };
 }
 
 #elif defined(_MSC_VER) && defined(_M_X64)
@@ -149,13 +155,13 @@ static inline uint64_t Rem128P(uint64_t Mx, uint64_t My, int d, uint64_t *quot)
 #define MAXSHIFT 63
 
 #include <intrin.h>
-static inline uint64_t Rem128P(uint64_t Mx, uint64_t My, int d, uint64_t *quot)
+static inline QuotRem64 Rem128P(uint64_t Mx, uint64_t My, int d)
 {
-    uint64_t rem;
+    QuotRem64 qr;
     uint64_t hi = (d != 0) ? Mx >> (64 - d) : 0;
     uint64_t lo = Mx << d;
-    *quot = _udiv128(hi, lo, My, &rem);
-    return rem;
+    qr.quot = _udiv128(hi, lo, My, &qr.rem);
+    return qr;
 }
 
 #else
@@ -169,7 +175,6 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
     uint64_t fax = asuint64(x) & POS_BITSET_DP64;
     uint64_t fay = asuint64(y) & POS_BITSET_DP64;
     double result = x;
-    uint64_t sign = asuint64(x) & SIGNBIT_DP64;
 
     if (unlikely(((fay - 1) | fax) >= POS_INF_F64))
     {
@@ -185,25 +190,29 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
         {   // |x| == Inf || y == 0
             result = __alm_handle_error(INDEFBITPATT_DP64, AMD_F_INVALID);
         }
-        else if (fax >= fay)
-        {   // |x| >= |y|
-            goto normal;
+        else
+        {   // False positive ((fay-1) | fax) >= POS_INF_F64; continue normally
+            goto noerror;
         }
     }
-    else if (likely(fax >= fay))
+    else noerror: if (likely(fax >= fay))
     {   // |x| >= |y|
-    normal: ;
         int xe = (int)(fax >> EXPSHIFTBITS_DP64);
         int ye = (int)(fay >> EXPSHIFTBITS_DP64);
         int shift = xe - ye;
-        uint64_t rem;
+        uint64_t qSum = 0;
+        QuotRem64 qr;
         F64ExpMan fpy;
-        uint64_t n_quot = 0;
 
+        // The (xe != 0) test is logically redundant since fax >= fay,
+        // so (ye != 0) implies (xe != 0). But Clang fuses consecutive
+        // side-effect-free equality tests into parallelizable setX
+        // instructions, and if you remove (xe != 0), it falls back on
+        // using multiple branches instead, and loses 11 Mcalls/sec.
         if (likely((ye != 0) && (xe != 0) && (shift <= MAXSHIFT)))
         {
             // Fast path: both normal, small shift
-            rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
+            qr.rem = (fax & MANTBITS_DP64) | IMPBIT_DP64;
             fpy = (F64ExpMan) { .m = (fay & MANTBITS_DP64) | IMPBIT_DP64, .e = ye };
         }
         else
@@ -211,51 +220,52 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
             // Slow path: subnormals or large shift
             F64ExpMan fpx = F64Extract(fax);
             fpy = F64Extract(fay);
-            rem = fpx.m;
+            qr.rem = fpx.m;
             shift = fpx.e - fpy.e;
-            while (shift > MAXSHIFT) {
-                uint64_t q;
-                rem = Rem128P(rem, fpy.m, MAXSHIFT, &q);
-                n_quot ^= q;
+            while (shift > MAXSHIFT)
+            {
+                qr = Rem128P(qr.rem, fpy.m, MAXSHIFT);
+                qSum += qr.quot;
                 shift -= MAXSHIFT;
             }
         }
-        {
-            uint64_t q;
-            rem = Rem128P(rem, fpy.m, shift, &q);
-            n_quot ^= q;
-        }
+
+        // Compute (x * 2^shift) mod y
+        qr = Rem128P(qr.rem, fpy.m, shift);
 
         // Nearest-even rounding: round up if 2*rem > My, or on a tie (2*rem == My)
-        // when n is odd.  XOR of all quotient LSBs gives parity of the total n.
-        uint64_t two_rem = rem + rem;
-        if (two_rem > fpy.m || (two_rem == fpy.m && (n_quot & 1)))
+        // when n is odd. Sum of all quotient LSBs gives parity of the total n.
+        uint64_t two_rem = qr.rem + qr.rem;
+        if (two_rem > fpy.m || ((two_rem == fpy.m) && (((qSum + qr.quot) & 1) != 0)))
         {
-            rem = fpy.m - rem;
-            sign ^= SIGNBIT_DP64;
+            qr.rem = fpy.m - qr.rem;
+            result = -result;
         }
 
-        if (likely(rem != 0)) {
-            int k = CLZ64(rem) - (64 - MANTLENGTH_DP64);
-            rem = (fpy.e > k) ? ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
-                | ((rem << k) & MANTBITS_DP64) :
-                likely(fpy.e > 0) ? rem << (fpy.e - 1) : rem >> (1 - fpy.e);
-        }
-        result = asdouble(rem | sign);
-    }
-    else
-    {   // 0 < |x| < |y|: n = 0 or 1; float arithmetic is exact here (Sterbenz)
-        double adx = asdouble(fax);
-        double ady = asdouble(fay);
-        double ax2 = adx + adx;       // 2*|x|, exact for finite non-max doubles
-        if (ax2 > ady)
+        if (likely(qr.rem != 0))
         {
-            // n=1: |result| = |y|-|x|, sign = -sign(x)
-            double r = ady - adx;     // exact by Sterbenz (adx > ady/2)
-            result = asdouble(asuint64(r) | (sign ^ SIGNBIT_DP64));
+            // k = number of bits to shift rem left to position implied bit
+            int k = CLZ64(qr.rem) - (64 - MANTLENGTH_DP64);
+
+            // k < fpy.e for normals, where fpy.e - k is biased result exponent
+            // For k >= fpy.e, result is subnormal and shifted in mantissa bits
+            qr.rem = (k < fpy.e) ? ((uint64_t)(fpy.e - k) << EXPSHIFTBITS_DP64)
+                | ((qr.rem << k) & MANTBITS_DP64) :
+                likely(fpy.e > 0) ? qr.rem << (fpy.e - 1) : qr.rem >> (1 - fpy.e);
         }
-        // else 2|x| <= |y|: n=0 (includes tie 2|x|==|y|: rounds to 0), result=x
+
+        // Result is same sign as original x with exponent and mantissa in rem
+        result = asdouble(qr.rem | (asuint64(result) & SIGNBIT_DP64));
     }
+    else if (fax + (fax < POS_LNORMAL_F64 ? fax : POS_LNORMAL_F64) > fay)
+    {
+        // 2*|x| > |y|
+        // n=1: |result| = |y|-|x|, sign = -sign(x)
+        // exact by Sterbenz (adx > ady/2)
+        result = asdouble(asuint64(asdouble(fay) - asdouble(fax))
+                          | (~asuint64(result) & SIGNBIT_DP64));
+    }
+    // else 2|x| <= |y|: n=0 (includes tie 2|x|==|y|: rounds to 0); result=x
 
     return result;
 }
