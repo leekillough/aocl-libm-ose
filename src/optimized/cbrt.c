@@ -81,7 +81,7 @@
  * cbrt(2^k) high and low parts for k in {-2, -1, 0, 1, 2}, indexed by k+2.
  * Stored as two parallel arrays so both loads hit the same cache line and
  * the compiler can emit a single indexed load for each, with no branch.
- * rem from biased_exp % 3 is in {-2,-1,0,1,2}; index = rem + 2.
+ * rem from expn % 3 is in {-2,-1,0,1,2}; index = rem + 2.
  */
 static const double cbrt_rem_h[5] = {
     6.299605071544647216796875E-1,   /* cbrt(2^-2) high  0x3FE428A2F0000000  k=-2 */
@@ -103,39 +103,32 @@ double
 ALM_PROTO_OPT(cbrt)(double x) {
     flt64_t  xdu = {.d = x};
     uint64_t ix  = xdu.u;
-    uint64_t ixe = EXPBITS_DP64 & ix;
+    uint64_t ixe = (EXPBITS_DP64 & ix) >> EXPSHIFTBITS_DP64;
     uint64_t ixm = MANTBITS_DP64 & ix;
 
-    if (unlikely(ixe == PINFBITPATT_DP64)) {
-        if (ixm != 0)
-            __alm_handle_error(ix | QNAN_MASK_64, AMD_F_INVALID);
-        return x + x;  /* Inf->Inf, qNaN->qNaN, sNaN->qNaN (FE_INVALID raised above) */
-    }
-
-    ixe >>= EXPSHIFTBITS_DP64;
-
-    if (unlikely(ixe == 0)) {
-        if (ixm == 0)
-            return x;
-        /* Subnormal: normalise by reinterpreting as 1.mantissa - 1.0 */
+    int64_t expn = (int64_t)ixe - EXPBIAS_DP64;
+    if (unlikely(ixe - 1 >= 0x7feu)) {
+        if (unlikely((ixe != 0) || (ixm == 0)))
+        {
+            return x + x; // Zero, Inf or NaN: raise FE_INVALID for sNaN
+        }
+        /* Subnormal: reinterpret as 1.mantissa - 1.0 to normalise. */
         flt64_t tmp = {.u = (ix & POS_BITSET_DP64) | ONEEXPBITS_DP64};
-        --tmp.d;
-        ixe = ((tmp.u & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) + EMIN_DP64;
+        tmp.d -= 1.0;
+        expn = (int64_t)(tmp.u >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64 + EMIN_DP64;
         ixm = tmp.u & MANTBITS_DP64;
     }
-
-    int64_t biased_exp = (int64_t)ixe - 1023;
 
     /*
      * Signed divide-by-3 via multiply-shift.
      * M = 0x55555556 ≈ 2^32/3 (rounded up); high 32 bits of the signed
-     * 64-bit product give floor(biased_exp/3).  Subtracting (biased_exp >> 63)
+     * 64-bit product give floor(expn/3).  Subtracting (expn >> 63)
      * — which is 0 for non-negative and −1 for negative — converts floor to
      * C truncation-toward-zero.  rem is then derived with a single multiply-
      * subtract, so the whole divide costs one imulq + sar + lea/sub.
      */
-    int64_t quotient = ((biased_exp * 0x55555556LL) >> 32) - (biased_exp >> 63);
-    int64_t rem      = biased_exp - quotient * 3;
+    int64_t quotient = ((expn * 0x55555556LL) >> 32) - (expn >> 63);
+    int64_t rem      = expn - quotient * 3;
 
     /* Reduced mantissa in [0.5, 1): built from ixm, which is correct after
      * the subnormal path updates it above. */
