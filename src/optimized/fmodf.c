@@ -128,7 +128,7 @@ float ALM_PROTO_OPT(fmodf)(float x, float y)
             goto noerror;
         }
     }
-    else noerror: if (fax >= fay)
+    else noerror: if (likely(fax >= fay))
     {   // |x| >= |y|
         F32ExpMan fpx = F32Extract(fax);  // Mantissa and biased exponent of x
         F32ExpMan fpy = F32Extract(fay);  // Mantissa and biased exponent of y
