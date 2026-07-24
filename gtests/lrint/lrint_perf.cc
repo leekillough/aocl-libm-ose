@@ -25,44 +25,54 @@
  *
  */
 
-#include "fn_macros.h"
-#include "libm_util_amd.h"
-#include <libm/alm_special.h>
-#include <libm/amd_funcs_internal.h>
-#include <libm/compiler.h>
-#include <limits.h>
-#if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
-#include <emmintrin.h>
-#endif
 
-long long ALM_PROTO_REF(llrintf)(float x)
-{
-    long long result = 0;
+#include <stdio.h>
+#include <float.h>
+#include <math.h>
+#include <string>
+#include <cstring>
+#include <vector>
+#include <chrono>
+#include "benchmark.h"
+#include "almtestperf.h"
+#include "callback.h"
 
-#if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
-    result = _mm_cvtss_si64(_mm_set_ss(x));
-#else
-    /* Threshold: 2^63, the long long overflow boundary as a float bit-pattern (0x5F000000). */
-    static const uint32_t OvfThreshold = (uint32_t)(63 + 127) << 23;
+using namespace std;
+using namespace ALM;
 
-    UT32 checkbits   = { .f32 = x };
-    uint32_t absbits = checkbits.u32 & POS_BITSET_F32;
+int AlmTestPerfFramework::AlmTestPerformance(InputParams *params) {
+  string funcnam = "AoclLibm";
+  string libm;
 
-    if ((absbits > OvfThreshold) ||
-        ((absbits == OvfThreshold) && ((checkbits.u32 & SIGNBIT_SP32) == 0))) {
-        /* NaN, Inf, x > LLONG_MAX, or x < LLONG_MIN: out of long long range.
-           x = -2^63 (LLONG_MIN) has absbits == OvfThreshold with sign set,
-           so it is excluded here and handled by the else-if branch below. */
-        __alm_handle_errorf(INDEFBITPATT_SP32, AMD_F_INVALID);
-        result = LLONG_MIN;
-    } else if (absbits > EXP_VAL_23_F32) {
-        /* 2^23 < |x| < 2^63: already integral in float, cast directly. */
-        result = (long long)x;
-    } else {
-        UT32 val_2p23 = { .u32 = (checkbits.u32 & SIGNBIT_SP32) | EXP_VAL_23_F32 };
-        result = (long long)((x + val_2p23.f32) - val_2p23.f32);
+  if((params->fwidth == ALM::FloatWidth::E_ALL) ||
+    (params->fwidth == ALM::FloatWidth::E_F32)) {
+    if((params->fqty == ALM::FloatQuantity::E_All) ||
+     (params->fqty == ALM::FloatQuantity::E_Scalar)) {
+      string varnam = "_s1s(lrintf)";
+      libm = funcnam + varnam;
+      benchmark::RegisterBenchmark(libm.c_str(), &LibmPerfTestf, params)
+                 ->Args({(int)params->count})->Iterations(params->niter);
     }
-#endif
+  }
 
-    return result;
+  if((params->fwidth == ALM::FloatWidth::E_ALL) ||
+    (params->fwidth == ALM::FloatWidth::E_F64)) {
+    if((params->fqty == ALM::FloatQuantity::E_All) ||
+     (params->fqty == ALM::FloatQuantity::E_Scalar)) {
+      string varnam = "_s1d(lrint)";
+      libm = funcnam + varnam;
+      benchmark::RegisterBenchmark(libm.c_str(), &LibmPerfTestd, params)
+                 ->Args({(int)params->count})->Iterations(params->niter);
+    }
+  }
+
+  size_t retval = benchmark::RunSpecifiedBenchmarks();
+
+  return (int)retval;
+}
+
+AlmTestPerfFramework::~AlmTestPerfFramework() {
+#if defined(DEBUG_PRINTS)
+  cout << "AlmTestPerfFramework destructor completed" << endl;
+#endif
 }
