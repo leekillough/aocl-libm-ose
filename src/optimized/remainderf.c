@@ -155,16 +155,37 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
     }
     else noerror: if (likely(fax >= fay))
     {   // |x| >= |y|
-        F32ExpMan fpx = F32Extract(fax);
-        F32ExpMan fpy = F32Extract(fay);
-        int shift = fpx.e - fpy.e;
+        int xe = (int)(fax >> EXPSHIFTBITS_SP32);  // Biased exponent of x
+        int ye = (int)(fay >> EXPSHIFTBITS_SP32);  // Biased exponent of y
+        int shift = xe - ye;  // result = (x * 2^shift) mod y
         uint32_t qSum = 0;
-        QuotRem32 qr = { .rem = fpx.m };
+        QuotRem32 qr;
+        F32ExpMan fpy;
 
-        while (unlikely(shift > MAXSHIFT)) {
-            qr = Rem64P(qr.rem, fpy.m, MAXSHIFT);
-            qSum += qr.quot;
-            shift -= MAXSHIFT;
+        // The (xe != 0) test is logically redundant since fax >= fay,
+        // so (ye != 0) implies (xe != 0). But Clang fuses consecutive
+        // side-effect-free equality tests into parallelizable setX
+        // instructions, and if you remove (xe != 0), it falls back on
+        // using multiple branches instead, and loses 11 Mcalls/sec.
+        if (likely((ye != 0) && (xe != 0) && (shift <= MAXSHIFT))) {
+            // Fast path: both normal, small shift
+            qr.rem = (fax & MANTBITS_SP32) | IMPBIT_SP32;
+            fpy = (F32ExpMan) { .m = (fay & MANTBITS_SP32) | IMPBIT_SP32, .e = ye };
+        }
+        else
+        {
+            // Slow path: subnormals or large shift
+            F32ExpMan fpx = F32Extract(fax);
+            fpy = F32Extract(fay);
+            qr.rem = fpx.m;
+            shift = fpx.e - fpy.e;
+
+            while (shift > MAXSHIFT)
+            {
+                qr = Rem64P(qr.rem, fpy.m, MAXSHIFT);
+                qSum += qr.quot;
+                shift -= MAXSHIFT;
+            }
         }
 
         // Compute (x * 2^shift) mod y
