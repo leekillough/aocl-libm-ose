@@ -42,7 +42,7 @@ long ALM_PROTO_REF(lrint)(double x)
 #if LONG_MAX > 0x7fffffffL
     /* CVTSD2SI raises FE_INVALID for -2^63 (= LONG_MIN) on some x86 CPUs, even
      * though it is exactly representable as long. */
-    if (unlikely(x == (double)LONG_MIN)) {
+    if (unlikely(x == -0x1p63)) {
         result = LONG_MIN;
     } else {
         result = (long)_mm_cvtsd_si64(_mm_set_sd(x));

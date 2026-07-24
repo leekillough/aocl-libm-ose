@@ -43,7 +43,7 @@ long long ALM_PROTO_REF(llrint)(double x)
     /* CVTSD2SI raises FE_INVALID for -2^63 (= LLONG_MIN), even though it is
      * exactly representable as long long.  Handle it on an unlikely() branch
      * so the common case is a single cvtsd2si instruction with no overhead. */
-    if (unlikely(x == (double)LLONG_MIN)) {
+    if (unlikely(x == -0x1p63)) {
         result = LLONG_MIN;
     } else {
         result = _mm_cvtsd_si64(_mm_set_sd(x));

@@ -42,7 +42,7 @@ long ALM_PROTO_REF(lrintf)(float x)
 #if LONG_MAX > 0x7fffffffL
     /* CVTSS2SI raises FE_INVALID for -2^63 (= LONG_MIN) on some x86 CPUs, even
      * though it is exactly representable as long. */
-    if (unlikely(x == (float)LONG_MIN)) {
+    if (unlikely(x == -0x1p63f)) {
         result = LONG_MIN;
     } else {
         result = (long)_mm_cvtss_si64(_mm_set_ss(x));
