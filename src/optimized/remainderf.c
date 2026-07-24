@@ -170,7 +170,7 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
         if (likely((ye != 0) && (xe != 0) && (shift <= MAXSHIFT))) {
             // Fast path: both normal, small shift
             qr.rem = (fax & MANTBITS_SP32) | IMPBIT_SP32;
-            fpy = (F32ExpMan) { .m = (fay & MANTBITS_SP32) | IMPBIT_FP32, .e = ye };
+            fpy = (F32ExpMan) { .m = (fay & MANTBITS_SP32) | IMPBIT_SP32, .e = ye };
         }
         else
         {
