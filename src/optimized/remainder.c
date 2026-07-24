@@ -235,8 +235,7 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
 
         // Nearest-even rounding: round up if 2*rem > My, or on a tie (2*rem == My)
         // when n is odd. Sum of all quotient LSBs gives parity of the total n.
-        uint64_t two_rem = qr.rem + qr.rem;
-        if (two_rem > fpy.m || ((two_rem == fpy.m) && (((qSum + qr.quot) & 1) != 0)))
+        if (qr.rem*2 > fpy.m || ((qr.rem*2 == fpy.m) && (((qSum + qr.quot) & 1) != 0)))
         {
             qr.rem = fpy.m - qr.rem;
             result = -result;
