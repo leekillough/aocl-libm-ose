@@ -91,7 +91,7 @@ typedef struct
 } F64ExpMan;
 
 // Extract a double precision value into a mantissa and biased exponent
-// Handles subnormal values
+// Handles subnormal values by shifting value and adjusting biased exponent
 static inline F64ExpMan F64Extract(uint64_t fax)
 {
     int lz;
@@ -179,11 +179,11 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
     if (unlikely(((fay - 1) | fax) >= POS_INF_F64))
     {
         if (fay > POS_INF_F64)
-        {   // |y| NaN
+        {   // |y| NaN: raise FE_INVALID if either operand is sNaN
             result = x * y;
         }
         else if (fax > POS_INF_F64)
-        {   // |x| NaN
+        {   // |x| NaN: propagate x; raise FE_INVALID if x is sNaN
             result = x + x;
         }
         else if ((fax == POS_INF_F64) || (fay == 0))
@@ -265,6 +265,7 @@ double ALM_PROTO_OPT(remainder)(double x, double y)
                           | (~asuint64(result) & SIGNBIT_DP64));
     }
     // else 2|x| <= |y|: n=0 (includes tie 2|x|==|y|: rounds to 0); result=x
+    // |y| == Inf also lands here (2|x| is finite, never > Inf), returning x.
 
     return result;
 }
