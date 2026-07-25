@@ -39,11 +39,11 @@
  *
  * Main path (|x| >= |y|):
  *   Compute rem = Mx * 2^shift mod My using 64-bit integer division (same
- *   as fmodf).  The quotient from each step is XOR'd into n_quot; the LSB
- *   of n_quot gives the parity of the total n.  After the reduction:
+ *   as fmodf).  The quotient from each step is added into qSum; the LSB
+ *   of qSum gives the parity of the total n.  After the reduction:
  *     2*rem < My: keep rem; sign(result) = sign(x).
  *     2*rem > My: use rem = My-rem (round up); sign(result) = -sign(x).
- *     2*rem == My: round up iff n is odd (tie-to-even); tracked via n_quot.
+ *     2*rem == My: round up iff n is odd (tie-to-even); tracked via qSum.
  *   MAXSHIFT = 64 - MANTLENGTH_SP32 = 40 (same as fmodf).
  *
  * Small-x path (0 < |x| < |y|):
@@ -91,7 +91,7 @@ typedef struct
 } F32ExpMan;
 
 // Extract a single precision value into a mantissa and biased exponent
-// Handles subnormal values
+// Handles subnormal values by shifting value and adjusting biased exponent
 static inline F32ExpMan F32Extract(uint32_t fax)
 {
     int lz;
@@ -137,11 +137,11 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
     if (unlikely(((fay - 1) | fax) >= POS_INF_F32))
     {
         if (fay > POS_INF_F32)
-        {   // |y| NaN
+        {   // |y| NaN: raise FE_INVALID if either operand is sNaN
             result = x * y;
         }
         else if (fax > POS_INF_F32)
-        {   // |x| NaN
+        {   // |x| NaN: propagate x; raise FE_INVALID if x is sNaN
             result = x + x;
         }
         else if ((fax == POS_INF_F32) || (fay == 0u))
@@ -201,6 +201,7 @@ float ALM_PROTO_OPT(remainderf)(float x, float y)
                          | (~asuint32(result) & SIGNBIT_SP32));
     }
     // else 2|x| <= |y|: n=0 (includes tie 2|x|==|y|: rounds to 0), result=x
+    // |y| == Inf also lands here (2|x| is finite, never > Inf), returning x.
 
     return result;
 }
