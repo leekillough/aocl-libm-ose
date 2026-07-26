@@ -48,7 +48,9 @@ bool special_case = false;
 
 uint32_t GetnIpArgs( void )
 {
-	return ipargs;
+    /* cbrt targets 1-ULP accuracy for double; override the default 0.5 threshold. */
+    setUlpThreshold(1.0);
+    return ipargs;
 }
 
 bool getSpecialCase(void)
