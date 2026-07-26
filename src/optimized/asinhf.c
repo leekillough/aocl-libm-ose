@@ -60,7 +60,6 @@
 #include <math.h>
 #include <stdint.h>
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
 #include <libm/typehelper.h>
 #include <libm/compiler.h>
@@ -134,17 +133,9 @@ ALM_PROTO_OPT(asinhf)(float x)
         return x + x;
     }
 
-    /* Tiny: |x| < 2^-12; asinhf(x) rounds to x, raising underflow+inexact */
+    /* Tiny: |x| < 2^-12; asinhf(x) = x exactly, no exceptions raised */
     if (unlikely(ax < ASINHF_TINY_THRESHOLD))
-    {
-        if (ax == 0)
-            return x;
-#ifdef WIN32
         return x;
-#else
-        return __alm_handle_errorf(ux, AMD_F_UNDERFLOW | AMD_F_INEXACT);
-#endif
-    }
 
     /* Small-x path: |x| <= 1.094f */
     if (ax <= ASINHF_SMALL_LIMIT) {
@@ -187,7 +178,7 @@ ALM_PROTO_OPT(asinhf)(float x)
     float y = asfloat(mant  | HALFEXPBITS_SP32);
     float f = asfloat(mant1 | HALFEXPBITS_SP32);
 
-    const struct logf_table *tbl = &logf_lookup[idx];
+    const struct logf_table* tbl = &logf_lookup[idx];
     double finv = tbl->f_inv;
     double r    = ((double)f - (double)y) * finv;
 
