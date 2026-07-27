@@ -26,8 +26,9 @@
  */
 
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <libm/typehelper.h>
+#include <fenv.h>
 #include <limits.h>
 
 /*
@@ -57,38 +58,42 @@
  * a halfway case that rounds to even, yielding the wrong result for odd integers.
  * Those values are handled by direct cast in the else-if branch.
  */
+#define LROUND_MIN    ((double)LONG_MIN - 0.5)
+#define LROUND_MAX    ((double)LONG_MAX + 0.5)
+
 #if LONG_MAX == 0x7fffffff
-#define LROUND_MIN    ((double)LONG_MIN - 0.5)    /* -(2^31+0.5), exact */
-#define LROUND_MAX    ((double)LONG_MAX + 0.5)    /* 2^31-0.5, exact */
 #define LROUND_INRANGE(x)  (((x) > LROUND_MIN) && ((x) < LROUND_MAX))
 #else
-#define LROUND_MIN    ((double)LONG_MIN - 0.5)    /* rounds to -2^63 = LONG_MIN */
-#define LROUND_MAX    ((double)LONG_MAX + 0.5)    /* rounds to 2^63 (overflows) */
 #define LROUND_INRANGE(x)  (((x) >= LROUND_MIN) && ((x) < LROUND_MAX))
 #endif
-
-/* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are exact integers. */
-#define LROUND_INT_BITS   0x4330000000000000ULL
 
 /* long is in the definition of the lround API, and is not chosen for its size */
 long ALM_PROTO_REF(lround)(double x)
 {
-    UT64 u = { .f64 = x };
+    long result = LONG_MIN;
 
-    long result = 0;
-
-    if (unlikely(!LROUND_INRANGE(x))) {
+    if (unlikely(!LROUND_INRANGE(x)))
+    {
         /* NaN, Inf, or x outside [LONG_MIN, LONG_MAX]: out of range.
          * LONG_MIN is returned for all such inputs regardless of sign. */
-        __alm_handle_error(EXPBITS_DP64 | QNAN_MASK_64, AMD_F_INVALID);
-        result = LONG_MIN;
-    } else if (unlikely((u.u64 & POS_BITSET_DP64) >= LROUND_INT_BITS)) {
-        /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
-         * halfway case that rounds to even, yielding a wrong result. */
+        feraiseexcept(FE_INVALID);
+    }
+    else
+    {
+        uint64_t ux = asuint64(x);
+
+#if LONG_MAX > 0x7fffffff
+        // For 32-bit long, |x| < 2^52 is always true because the test
+        // above already established that |x| <= 2^31.
+        if (likely((ux & POS_BITSET_DP64) < EXP_VAL_52_DP64))
+#endif
+        {
+            /* Only add if |x| < 2^52; if |x| >= 2^52: already an exact integer;
+               adding 0.5 would create a halfway case that depends on rounding
+               mode, yielding a wrong result. */
+            x += asdouble((ux & SIGNBIT_DP64) | HALFEXPBITS_DP64);
+        }
         result = (long)x;
-    } else {
-        UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | HALFEXPBITS_DP64 };
-        result = (long)(x + half.f64);
     }
 
     return result;

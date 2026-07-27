@@ -26,8 +26,9 @@
  */
 
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <libm/typehelper.h>
+#include <fenv.h>
 #include <limits.h>
 
 /*
@@ -47,28 +48,26 @@
 #define LLROUND_MAX       ((double)LLONG_MAX + 0.5)   /* rounds to 2^63 (overflows) */
 #define LLROUND_INRANGE(x) (((x) >= LLROUND_MIN) && ((x) < LLROUND_MAX))
 
-/* 2^52 as a double bit-pattern: doubles with |x| >= 2^52 are already exact integers. */
-#define LLROUND_INT_BITS   0x4330000000000000ULL
-
 /* long long is in the definition of the llround API, and is not chosen for its size */
 long long ALM_PROTO_REF(llround)(double x)
 {
-    long long result = 0;
+    long long result = LLONG_MIN;
 
-    if (unlikely(!LLROUND_INRANGE(x))) {
+    if (unlikely(!LLROUND_INRANGE(x)))
+    {
         /* NaN, Inf, or x outside [-2^63, 2^63): out of long long range. */
-        __alm_handle_error(EXPBITS_DP64 | QNAN_MASK_64, AMD_F_INVALID);
-        result = LLONG_MIN;
-    } else {
-        UT64 u = { .f64 = x };
-        if (unlikely((u.u64 & POS_BITSET_DP64) >= LLROUND_INT_BITS)) {
-            /* |x| >= 2^52: already an exact integer; adding 0.5 would create a
-               halfway case that rounds to even, yielding a wrong result. */
-            result = (long long)x;
-        } else {
-            UT64 half = { .u64 = (u.u64 & SIGNBIT_DP64) | HALFEXPBITS_DP64 };
-            result = (long long)(x + half.f64);
+        feraiseexcept(FE_INVALID);
+    }
+    else
+    {
+        uint64_t ux = asuint64(x);
+        if (likely((ux & POS_BITSET_DP64) < EXP_VAL_52_DP64)) {
+            /* Only add if |x| < 2^52; if |x| >= 2^52: already an exact integer;
+               adding 0.5 would create a halfway case that depends on rounding
+               mode, yielding a wrong result. */
+            x += asdouble((ux & SIGNBIT_DP64) | HALFEXPBITS_DP64);
         }
+        result = (long long)x;
     }
 
     return result;

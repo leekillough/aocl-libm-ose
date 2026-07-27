@@ -26,8 +26,9 @@
  */
 
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <libm/typehelper.h>
+#include <fenv.h>
 #include <limits.h>
 
 /*
@@ -47,27 +48,26 @@
 #define LLROUNDF_MAX        ((float)LLONG_MAX + 0.5f)   /* rounds to 2^63 (overflows) */
 #define LLROUNDF_INRANGE(x) (((x) >= LLROUNDF_MIN) && ((x) < LLROUNDF_MAX))
 
-/* 2^23 as a float bit-pattern: floats with |x| >= 2^23 are already exact integers. */
-#define LLROUNDF_INT_BITS   0x4B000000U
-
 /* long long is in the definition of the llroundf API, and is not chosen for its size */
 long long ALM_PROTO_REF(llroundf)(float x)
 {
-    UT32 u = { .f32 = x };
+    long long result = LLONG_MIN;
 
-    long long result = 0;
-
-    if (unlikely(!LLROUNDF_INRANGE(x))) {
+    if (unlikely(!LLROUNDF_INRANGE(x)))
+    {
         /* NaN, Inf, or x outside [-2^63, 2^63): out of long long range. */
-        __alm_handle_errorf(EXPBITS_SP32 | QNAN_MASK_32, AMD_F_INVALID);
-        result = LLONG_MIN;
-    } else if (unlikely((u.u32 & POS_BITSET_F32) >= LLROUNDF_INT_BITS)) {
-        /* |x| >= 2^23: already an exact integer; adding 0.5f would create a
-           halfway case that rounds to even, yielding a wrong result. */
+        feraiseexcept(FE_INVALID);
+    }
+    else
+    {
+        uint32_t ux = asuint32(x);
+        if (likely((ux & POS_BITSET_F32) < EXP_VAL_23_F32)) {
+            /* Only add if |x| < 2^23; if |x| >= 2^23: already an exact integer;
+               adding 0.5f would create a halfway case that depends on rounding
+               mode, yielding a wrong result. */
+            x += asfloat((ux & SIGNBIT_SP32) | HALFEXPBITS_SP32);
+        }
         result = (long long)x;
-    } else {
-        UT32 half = { .u32 = (u.u32 & SIGNBIT_SP32) | HALFEXPBITS_SP32 };
-        result = (long long)(x + half.f32);
     }
 
     return result;
