@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -26,104 +26,63 @@
  */
 
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <libm/typehelper.h>
+#include <fenv.h>
+#include <limits.h>
 
-long int ALM_PROTO_REF(lroundf)(float f)
+/*
+ * Overflow thresholds for lroundf(float), derived from LONG_MIN and LONG_MAX.
+ *
+ * For float inputs, ULP at the magnitude of LONG_MIN and LONG_MAX is far larger
+ * than 0.5f in both the 32-bit and 64-bit long cases:
+ *   32-bit long: ULP at 2^31 in float is 2^8 = 256;
+ *     (float)LONG_MIN - 0.5f rounds to (float)LONG_MIN = -2^31.
+ *     (float)LONG_MAX + 0.5f: (float)LONG_MAX rounds to 2^31; +0.5f stays 2^31.
+ *   64-bit long: ULP at 2^63 in float is 2^40;
+ *     (float)LONG_MIN - 0.5f rounds to (float)LONG_MIN = -2^63.
+ *     (float)LONG_MAX + 0.5f rounds to 2^63.
+ *
+ * In both cases LROUNDF_MIN = (float)LONG_MIN (exactly representable as a power
+ * of two and a valid lroundf input), so >= is required on the lower bound.
+ * LROUNDF_MAX = 2^(N-1) is itself overflowing, so < (strict) is used on the upper.
+ * No #if on LONG_MAX is needed: the same condition form applies to both sizes.
+ *
+ * NaN: ordered comparisons raise FE_INVALID for NaN per IEEE 754 / C Annex F;
+ * __alm_handle_errorf raises it again for Inf and out-of-range finite values.
+ * LONG_MIN is returned for all out-of-range inputs regardless of sign.
+ *
+ * Floats with |x| >= 2^23 are already exact integers; adding 0.5f would land on
+ * a halfway case that rounds to even, yielding the wrong result for odd integers.
+ * Those values are handled by direct cast in the else-if branch.
+ */
+#define LROUNDF_MIN  ((float)LONG_MIN - 0.5f)  /* rounds to (float)LONG_MIN */
+#define LROUNDF_MAX  ((float)LONG_MAX + 0.5f)  /* rounds to 2^(N-1) */
+#define LROUNDF_INRANGE(x) (((x) >= LROUNDF_MIN) && ((x) < LROUNDF_MAX))
+
+/* long is in the definition of the lroundf API, and is not chosen for its size */
+long ALM_PROTO_REF(lroundf)(float x)
 {
-    UT32 u32d;
-    UT32 u32Temp,u32result;
-    int intexp, shift;
-    U32 sign;
-    long int  result;
+    long result = LONG_MIN;
 
-    u32d.f32 = u32Temp.f32 = f;
-    if ((u32d.u32 & 0X7F800000) == 0x7F800000)
+    if (unlikely(!LROUNDF_INRANGE(x)))
     {
-        /*else the number is infinity*/
-	//Raise range or domain error
+        /* NaN, Inf, or x outside [LONG_MIN, LONG_MAX]: out of range.
+           LONG_MIN is returned for all such inputs regardless of sign. */
+        feraiseexcept(FE_INVALID);
+    }
+    else
+    {
+        uint32_t ux = asuint32(x);
+        if (likely((ux & POS_BITSET_F32) < EXP_VAL_23_F32))
         {
-            #ifdef WIN64
-            __alm_handle_errorf(SIGNBIT_SP32, AMD_F_NONE);
-            return (long int)SIGNBIT_SP32;
-            #else
-            if((u32d.u32 & 0x7fffffff) == 0x7f800000)
-                return (long)SIGNBIT_DP64;
-            if((u32d.u32 & 0x7fffffff) >= 0x7fc00000)
-                __alm_handle_errorf((unsigned int)SIGNBIT_DP64,
-                                                          AMD_F_NONE);
-            else
-                __alm_handle_errorf((unsigned int)SIGNBIT_DP64,
-                                                       AMD_F_INVALID);
-            
-            return (long)SIGNBIT_DP64; /*GCC returns this when the number is out of range*/
-            #endif
+            /* Only add if |x| < 2^23; if |x| >= 2^23: already an exact integer;
+               adding 0.5f would create a halfway case that depends on rounding
+               mode, yielding a wrong result. */
+            x += asfloat((ux & SIGNBIT_SP32) | HALFEXPBITS_SP32);
         }
+        result = (long)x;
     }
-
-    u32Temp.u32 &= 0x7FFFFFFF;
-    intexp = (u32d.u32 & 0x7F800000) >> 23;
-    sign = u32d.u32 & 0x80000000;
-    intexp -= 0x7F;
-
-    /* 1.0 x 2^-1 is the smallest number which can be rounded to 1 */
-    if (intexp < -1)
-        return (0);
-
-
-#ifdef WIN64
-    /* 1.0 x 2^31 is already too large */
-    if (intexp >= 31)
-    {
-        result = 0x80000000;
-	    __alm_handle_errorf(result, AMD_F_NONE);
-        return result;
-	}
-
-#else
-    /* 1.0 x 2^31 (or 2^63) is already too large */
-    if (intexp >= 63)
-    {
-        result = (long)0x8000000000000000L;
-        __alm_handle_errorf((unsigned long long)result, AMD_F_NONE);
-	    return result;
-    }
- #endif
-
-    u32result.f32 = u32Temp.f32;
-
-    /* >= 2^23 is already an exact integer */
-    if (intexp < 23)
-    {
-        /* add 0.5, extraction below will truncate */
-        u32result.f32 = u32Temp.f32 + 0.5F;
-    }
-    intexp = (u32result.u32 & 0x7f800000) >> 23;
-    intexp -= 0x7f;
-    u32result.u32 &= 0x7fffff;
-    u32result.u32 |= 0x00800000;
-
-    result = u32result.u32;
-
-    #ifdef WIN64
-    shift = intexp - 23;
-    #else
-
-    /*Since float is only 32 bit for higher accuracy we shift the result by 32 bits
-     * In the next step we shift an extra 32 bits in the reverse direction based
-     * on the value of intexp*/
-    result = result << 32;
-    shift = intexp - 55; /*55= 23 +32*/
-    #endif
-
-    if(shift < 0)
-        result = result >> (-shift);
-    if(shift > 0)
-        result = result << (shift);
-
-    if (sign)
-        result = -result;
 
     return result;
 }
-

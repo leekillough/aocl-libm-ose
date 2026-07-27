@@ -25,36 +25,54 @@
  *
  */
 
-#include <libm_macros.h>
-#include <libm/amd_funcs_internal.h>
-#include <libm/iface.h>
-#include <libm/entry_pt.h>
-#include <libm/arch/all.h>
 
-/*
- * lround/lroundf have no architecture-optimized implementations; all variants
- * dispatch to the REF implementations.  The REF path is already branchless
- * for normal inputs and there are no uarch-specific variants to select.
- */
-static const
-struct alm_arch_funcs __arch_funcs_lround = {
-    .def_arch = ALM_UARCH_VER_DEFAULT,
-    .funcs = {
-        [ALM_UARCH_VER_DEFAULT] = {
-            [ALM_FUNC_SCAL_SP] = &ALM_PROTO_REF(lroundf),
-            [ALM_FUNC_SCAL_DP] = &ALM_PROTO_REF(lround),
-        },
-    },
-};
+#include <stdio.h>
+#include <float.h>
+#include <math.h>
+#include <string>
+#include <cstring>
+#include <vector>
+#include <chrono>
+#include "benchmark.h"
+#include "almtestperf.h"
+#include "callback.h"
 
-void
-LIBM_IFACE_PROTO(lround)(void *arg) {
-    alm_ep_wrapper_t g_entry_lround = {
-       .g_ep = {
-        [ALM_FUNC_SCAL_SP]   = &G_ENTRY_PT_PTR(lroundf),
-        [ALM_FUNC_SCAL_DP]   = &G_ENTRY_PT_PTR(lround),
-        },
-    };
+using namespace std;
+using namespace ALM;
 
-    alm_iface_fixup(&g_entry_lround, &__arch_funcs_lround);
+int AlmTestPerfFramework::AlmTestPerformance(InputParams *params) {
+  string funcnam = "AoclLibm";
+  string libm;
+
+  if((params->fwidth == ALM::FloatWidth::E_ALL) ||
+    (params->fwidth == ALM::FloatWidth::E_F32)) {
+    if((params->fqty == ALM::FloatQuantity::E_All) ||
+     (params->fqty == ALM::FloatQuantity::E_Scalar)) {
+      string varnam = "_s1s(lroundf)";
+      libm = funcnam + varnam;
+      benchmark::RegisterBenchmark(libm.c_str(), &LibmPerfTestf, params)
+                 ->Args({(int)params->count})->Iterations(params->niter);
+    }
+  }
+
+  if((params->fwidth == ALM::FloatWidth::E_ALL) ||
+    (params->fwidth == ALM::FloatWidth::E_F64)) {
+    if((params->fqty == ALM::FloatQuantity::E_All) ||
+     (params->fqty == ALM::FloatQuantity::E_Scalar)) {
+      string varnam = "_s1d(lround)";
+      libm = funcnam + varnam;
+      benchmark::RegisterBenchmark(libm.c_str(), &LibmPerfTestd, params)
+                 ->Args({(int)params->count})->Iterations(params->niter);
+    }
+  }
+
+  size_t retval = benchmark::RunSpecifiedBenchmarks();
+
+  return (int)retval;
+}
+
+AlmTestPerfFramework::~AlmTestPerfFramework() {
+#if defined(DEBUG_PRINTS)
+  cout << "AlmTestPerfFramework destructor completed" << endl;
+#endif
 }

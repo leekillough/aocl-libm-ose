@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -26,83 +26,49 @@
  */
 
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <libm/typehelper.h>
+#include <fenv.h>
+#include <limits.h>
 
-#ifdef WINDOWS
-/*In windows llong long int is 64 bit and long int is 32 bit.
-  In Linux long long int and long int both are of size 64 bit*/
-long long int ALM_PROTO_REF(llround)(double d)
+/*
+ * Overflow thresholds for llround(double), derived from LLONG_MIN and LLONG_MAX.
+ *
+ * LLONG_MIN = -2^63 is exactly representable as double; subtracting 0.5 rounds
+ * back to -2^63 (ULP at 2^63 is 2048, which swamps 0.5).  So LLROUND_MIN =
+ * -2^63 = LLONG_MIN as double, which is itself a valid input; use >= on the lower.
+ * LLONG_MAX = 2^63-1 rounds to 2^63 in double; adding 0.5 stays 2^63.  So
+ * LLROUND_MAX = 2^63 is itself overflowing; use < (strict) on the upper bound.
+ *
+ * NaN: ordered comparisons raise FE_INVALID for NaN per IEEE 754 / C Annex F;
+ * __alm_handle_error raises it again for Inf and out-of-range finite values.
+ * LLONG_MIN is returned for all out-of-range inputs regardless of sign.
+ */
+#define LLROUND_MIN       ((double)LLONG_MIN - 0.5)   /* rounds to -2^63 = LLONG_MIN */
+#define LLROUND_MAX       ((double)LLONG_MAX + 0.5)   /* rounds to 2^63 (overflows) */
+#define LLROUND_INRANGE(x) (((x) >= LLROUND_MIN) && ((x) < LLROUND_MAX))
+
+/* long long is in the definition of the llround API, and is not chosen for its size */
+long long ALM_PROTO_REF(llround)(double x)
 {
-    UT64 u64d;
-    UT64 u64Temp,u64result;
-    int intexp, shift;
-    U64 sign;
-    long long int result;
+    long long result = LLONG_MIN;
 
-    u64d.f64 = u64Temp.f64 = d;
-
-    if ((u64d.u32[1] & 0X7FF00000) == 0x7FF00000)
+    if (unlikely(!LLROUND_INRANGE(x)))
     {
-        /*the number is infinity*/
-        //Got to raise range or domain error
-		__alm_handle_error("llround", __amd_lround, u64d.u64, _DOMAIN, AMD_F_NONE, EDOM, d, 0.0, 1);
-		return SIGNBIT_DP64; /*GCC returns this when the number is out of range*/
+        /* NaN, Inf, or x outside [-2^63, 2^63): out of long long range. */
+        feraiseexcept(FE_INVALID);
     }
-
-    u64Temp.u32[1] &= 0x7FFFFFFF;
-    intexp = (u64d.u32[1] & 0x7FF00000) >> 20;
-    sign = u64d.u64 & 0x8000000000000000;
-    intexp -= 0x3FF;
-
-    /* 1.0 x 2^-1 is the smallest number which can be rounded to 1 */
-    if (intexp < -1)
-        return (0);
-
-    /* 1.0 x 2^31 (or 2^63) is already too large */
-    if (intexp >= 63)
+    else
     {
-        /*Based on the sign of the input value return the MAX and MIN*/
-        result = 0x8000000000000000; /*Return LONG MIN*/
-		__alm_handle_error("llround", __amd_lround, result, _DOMAIN, AMD_F_NONE, EDOM, d, 0.0, 1);
-        return result;
+        uint64_t ux = asuint64(x);
+        if (likely((ux & POS_BITSET_DP64) < EXP_VAL_52_DP64)) {
+            /* Only add if |x| < 2^52; if |x| >= 2^52: already an exact integer;
+               adding 0.5 would create a halfway case that depends on rounding
+               mode, yielding a wrong result. */
+            x += asdouble((ux & SIGNBIT_DP64) | HALFEXPBITS_DP64);
+        }
+        result = (long long)x;
     }
-
-    u64result.f64 = u64Temp.f64;
-    /* >= 2^52 is already an exact integer */
-    if (intexp < 52)
-    {
-        /* add 0.5, extraction below will truncate */
-        u64result.f64 = u64Temp.f64 + 0.5;
-    }
-
-    intexp = ((u64result.u32[1] >> 20) & 0x7ff) - 0x3FF;
-
-    u64result.u32[1] &= 0xfffff;
-    u64result.u32[1] |= 0x00100000; /*Mask the last exp bit to 1*/
-    shift = intexp - 52;
-
-    if(shift < 0)
-        u64result.u64 = u64result.u64 >> (-shift);
-    if(shift > 0)
-        u64result.u64 = u64result.u64 << (shift);
-
-    result = u64result.u64;
-
-    if (sign)
-        result = -result;
 
     return result;
 }
-
-#else //WINDOWS 
-/*llroundf is equivalent to the linux implementation of 
-  lroundf. Both long int and long long int are of the same size*/
-long long int ALM_PROTO_REF(llround)(double d)
-{
-    long long int result;
-    result = FN_PROTOTYPE(lround)(d);
-    return result;
-}
-
-#endif

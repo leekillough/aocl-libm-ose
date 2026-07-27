@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -26,109 +26,75 @@
  */
 
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/amd_funcs_internal.h>
+#include <libm/typehelper.h>
+#include <fenv.h>
+#include <limits.h>
 
+/*
+ * Overflow thresholds for lround(double), derived from LONG_MIN and LONG_MAX.
+ *
+ * 32-bit long (LONG_MAX == 0x7fffffff):
+ *   LONG_MIN = -2^31 and LONG_MAX = 2^31-1 are both exactly representable as double.
+ *   (double)LONG_MAX + 0.5 = 2^31 - 0.5  (exact; this is 0x1.fffffffep+30).
+ *   (double)LONG_MIN - 0.5 = -(2^31+0.5) (exact; this is -0x1.00000001p+31).
+ *   Both bounds are exactly representable, so strict > and < correctly exclude
+ *   the overflowing boundary values.
+ *
+ * 64-bit long (LONG_MAX == 0x7fffffffffffffff):
+ *   LONG_MIN = -2^63 is exactly representable; LONG_MAX = 2^63-1 rounds to 2^63.
+ *   (double)LONG_MAX + 0.5 rounds to 2^63  (ULP at 2^63 is 2048, swamps 0.5).
+ *   (double)LONG_MIN - 0.5 rounds to -2^63 (ULP at 2^63 swamps 0.5).
+ *   LROUND_MIN = -2^63 = LONG_MIN as double, which is a valid input, so >= is
+ *   required on the lower bound.  LROUND_MAX = 2^63 is itself overflowing, so
+ *   < (strict) is required on the upper bound.
+ *
+ * NaN: ordered comparisons raise FE_INVALID for NaN per IEEE 754 / C Annex F;
+ * __alm_handle_error raises it again for Inf and out-of-range finite values.
+ * LONG_MIN is returned for all out-of-range inputs regardless of sign, matching
+ * the x86 integer-indefinite value from cvtsd2si.
+ *
+ * Doubles with |x| >= 2^52 are already exact integers; adding 0.5 would land on
+ * a halfway case that rounds to even, yielding the wrong result for odd integers.
+ * Those values are handled by direct cast in the else-if branch.
+ */
+#define LROUND_MIN    ((double)LONG_MIN - 0.5)
+#define LROUND_MAX    ((double)LONG_MAX + 0.5)
 
+#if LONG_MAX == 0x7fffffff
+#define LROUND_INRANGE(x)  (((x) > LROUND_MIN) && ((x) < LROUND_MAX))
+#else
+#define LROUND_INRANGE(x)  (((x) >= LROUND_MIN) && ((x) < LROUND_MAX))
+#endif
 
-long int ALM_PROTO_REF(lround)(double d)
+/* long is in the definition of the lround API, and is not chosen for its size */
+long ALM_PROTO_REF(lround)(double x)
 {
-    UT64 u64d;
-    UT64 u64Temp,u64result;
-    int intexp, shift;
-    U64 sign;
-    long int result;
+    long result = LONG_MIN;
 
-    u64d.f64 = u64Temp.f64 = d;
-
-    if ((u64d.u32[1] & 0X7FF00000) == 0x7FF00000)
+    if (unlikely(!LROUND_INRANGE(x)))
     {
-        /*else the number is infinity*/
-        //Raise range or domain error
-        #ifdef WIN64
-        __alm_handle_error(SIGNBIT_SP32,
-                                      AMD_F_NONE);
-        return (long int )SIGNBIT_SP32;
-        #else
-        if((u64d.u64 & 0x7fffffffffffffff) == 0x7ff0000000000000)
-            return (long)SIGNBIT_DP64;
-        if((u64d.u64 & 0x7fffffffffffffff) >= 0x7ff8000000000000)
-            __alm_handle_error((unsigned long long)SIGNBIT_DP64,
-                                                           AMD_F_NONE);
-        else
-            __alm_handle_error((unsigned long long)SIGNBIT_DP64,
-                                                        AMD_F_INVALID);
-        return (long)SIGNBIT_DP64; /*GCC returns this when the number is out of range*/
-        #endif
-
+        /* NaN, Inf, or x outside [LONG_MIN, LONG_MAX]: out of range.
+         * LONG_MIN is returned for all such inputs regardless of sign. */
+        feraiseexcept(FE_INVALID);
     }
-
-    u64Temp.u32[1] &= 0x7FFFFFFF;
-    intexp = (u64d.u32[1] & 0x7FF00000) >> 20;
-    sign = u64d.u64 & 0x8000000000000000;
-    intexp -= 0x3FF;
-
-    /* 1.0 x 2^-1 is the smallest number which can be rounded to 1 */
-    if (intexp < -1)
-        return (0);
-
-#ifdef WIN64
-    /* 1.0 x 2^31 (or 2^63) is already too large */
-    if (intexp >= 31)
+    else
     {
-        /*Based on the sign of the input value return the MAX and MIN*/
-        result = 0x80000000; /*Return LONG MIN*/
-        __alm_handle_error(result, AMD_F_NONE);
-        return result;
-    }
+        uint64_t ux = asuint64(x);
 
-#else
-    /* 1.0 x 2^31 (or 2^63) is already too large */
-    if (intexp >= 63)
-    {
-        /*Based on the sign of the input value return the MAX and MIN*/
-        result = (long)0x8000000000000000; /*Return LONG MIN*/
-        __alm_handle_error((unsigned long long)result, AMD_F_NONE);
-        return result;
-    }
-
+#if LONG_MAX > 0x7fffffff
+        // For 32-bit long, |x| < 2^52 is always true because the test
+        // above already established that |x| <= 2^31.
+        if (likely((ux & POS_BITSET_DP64) < EXP_VAL_52_DP64))
 #endif
-
-    u64result.f64 = u64Temp.f64;
-    /* >= 2^52 is already an exact integer */
-#ifdef WIN64
-    if (intexp < 23)
-#else
-    if (intexp < 52)
-#endif
-    {
-        /* add 0.5, extraction below will truncate */
-        u64result.f64 = u64Temp.f64 + 0.5;
+        {
+            /* Only add if |x| < 2^52; if |x| >= 2^52: already an exact integer;
+               adding 0.5 would create a halfway case that depends on rounding
+               mode, yielding a wrong result. */
+            x += asdouble((ux & SIGNBIT_DP64) | HALFEXPBITS_DP64);
+        }
+        result = (long)x;
     }
-
-    intexp = (int)(((u64result.u32[1] >> 20) & 0x7ff) - 0x3FF);
-
-    u64result.u32[1] &= 0xfffff;
-    u64result.u32[1] |= 0x00100000; /*Mask the last exp bit to 1*/
-    shift = intexp - 52;
-
-#ifdef WIN64
-	/*The shift value will always be negative.*/
-    u64result.u64 = u64result.u64 >> (-shift);
-	/*Result will be stored in the lower word due to the shift being performed*/
-    result = u64result.u32[0];
-#else
-     if(shift < 0)
-        u64result.u64 = u64result.u64 >> (-shift);
-    if(shift > 0)
-        u64result.u64 = u64result.u64 << (shift);
-
-    result = (long)u64result.u64;
-#endif
-
-    if (sign)
-        result = -result;
 
     return result;
 }
-
