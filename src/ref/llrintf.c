@@ -40,14 +40,7 @@ long long ALM_PROTO_REF(llrintf)(float x)
     long long result = 0;
 
 #if defined(__SSE2__) && (defined(__x86_64__) || defined(_M_X64))
-    /* CVTSS2SI raises FE_INVALID for -2^63 (= LLONG_MIN), even though it is
-     * exactly representable as long long.  Handle it on an unlikely() branch
-     * so the common case is a single cvtss2si instruction with no overhead. */
-    if (unlikely(x == -0x1p63f)) {
-        result = LLONG_MIN;
-    } else {
-        result = _mm_cvtss_si64(_mm_set_ss(x));
-    }
+    result = _mm_cvtss_si64(_mm_set_ss(x));
 #else
     /* Threshold: 2^63, the long long overflow boundary as a float bit-pattern (0x5F000000). */
     static const uint32_t OvfThreshold = (uint32_t)(63 + 127) << 23;
