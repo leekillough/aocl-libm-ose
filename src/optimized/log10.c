@@ -100,8 +100,8 @@ struct log10_table {
     double lead, tail;
 };
 
-extern struct log10_table log10_table_256[];
-extern        double      log_f_inv_256[];
+extern const struct log10_table log10_table_256[];
+extern const double log_f_inv_256[];
 #define TAB_F_INV         log_f_inv_256
 #define ALM_TAB_LOG10     log10_table_256
 

@@ -73,8 +73,8 @@
 
 #if N == 8
 #define POLY_DEGREE 6
-extern double log_table_256[];
-extern double log_f_inv_256[];
+extern const double log_table_256[];
+extern const double log_f_inv_256[];
 #define TAB_F_INV log_f_inv_256
 #define TAB_LOG   log_table_256
 #define MANT_MASK_N  (0x000FF00000000000ULL)

@@ -43,35 +43,37 @@
 
 #include "libm_macros.h"
 #include "libm_util_amd.h"
-#include <libm/alm_special.h>
 #include <libm/typehelper.h>
 #include <libm/amd_funcs_internal.h>
 #include <libm/compiler.h>
 
-extern uint64_t log_256[];
-#define N 8
+
+#define N 10
 #define TABLE_SIZE (1ULL << N)
 #define MAX_POLYDEGREE  8
 
 #if N == 8
 #define POLY_DEGREE 4
-extern double log_table_256[];
-extern double log_f_inv_256[];
+extern const uint64_t log_256[];
+extern const double log_f_inv_256[];
+#define TAB_LOG(j)   asdouble(log_256[j])
 #define TAB_F_INV log_f_inv_256
-#define TAB_LOG   log_table_256
 #define MANT_MASK_N  (0x000FF00000000000ULL)
 #define MANT_MASK_N1 (0x0000080000000000ULL)
 #elif N == 9
-#define POLY_DEGREE 5
-extern double log_table_512[];
-extern double log_f_inv_512[];
-
+#define POLY_DEGREE 2
+extern const double log_512[];
+extern const double log_f_inv_512[];
+#define TAB_LOG(j)   log_512[j]
+#define TAB_F_INV log_f_inv_512
+#define MANT_MASK_N  (0x000FFC0000000000ULL)
+#define MANT_MASK_N1 (0x0000040000000000ULL)
 #elif N == 10
-#define POLY_DEGREE 4
-extern double log_table_1024[];
-extern double log_f_inv_1024[];
+#define POLY_DEGREE 2
+extern const double log_1024[];
+extern const double log_f_inv_1024[];
+#define TAB_LOG(j)   log_1024[j]
 #define TAB_F_INV log_f_inv_1024
-#define TAB_LOG   log_table_1024
 #define MANT_MASK_N  (0x000FFC0000000000ULL)
 #define MANT_MASK_N1 (0x0000020000000000ULL)
 #endif
@@ -79,11 +81,16 @@ extern double log_f_inv_1024[];
 #define MANT_BITS_MASK (TABLE_SIZE - 1)
 #define MANT1_BITS_MASK (1ULL << (N + 1))
 
-#define EXPF_N 6
+#define EXPF_N 10
+#define EXPF_POLY_DEGREE 3
+#if EXPF_N == 6
+#undef EXPF_POLY_DEGREE
 #define EXPF_POLY_DEGREE 4
-#if EXPF_N == 5
+#elif EXPF_N == 5
+#undef EXPF_POLY_DEGREE
 #define EXPF_POLY_DEGREE 3
 #elif EXPF_N == 4
+#undef EXPF_POLY_DEGREE
 #define EXPF_POLY_DEGREE 3
 #endif
 
@@ -125,15 +132,41 @@ static struct {
 #define C8 log_data.poly[6]
 #define LN2_LEAD log_data.ln2_lead
 #define LN2_TAIL log_data.ln2_tail
-#define SIGN_BIAS 0x8000000000000000
 
 #include "expf_data.h"
 
+extern double __two_to_jby128[];
+extern double __two_to_jby256[];
+extern double __two_to_jby512[];
+extern double __two_to_jby1024[];
+
 static struct expf_data expf_v2_data = {
+#if EXPF_N == 10
+    .ln2by_tblsz = 0x1.62e42fefa39efp-11,  /* ln(2)/1024 */
+    .tblsz_byln2 = 0x1.71547652b82fep+10,  /* 1024/ln(2) */
+#elif EXPF_N == 9
+    .ln2by_tblsz = 0x1.62e42fefa39efp-10,  /* ln(2)/512 */
+    .tblsz_byln2 = 0x1.71547652b82fep+9,   /* 512/ln(2) */
+#elif EXPF_N == 8
+    .ln2by_tblsz = 0x1.62e42fefa39efp-9,   /* ln(2)/256 */
+    .tblsz_byln2 = 0x1.71547652b82fep+8,   /* 256/ln(2) */
+#elif EXPF_N == 7
+    .ln2by_tblsz = 0x1.62e42fefa39efp-8,   /* ln(2)/128 */
+    .tblsz_byln2 = 0x1.71547652b82fep+7,   /* 128/ln(2) */
+#else
     .ln2by_tblsz = 0x1.62e42fefa39efp-7,
     .tblsz_byln2 = 0x1.71547652b82fep+6,
+#endif
     .Huge = 0x1.8000000000000p+52,
-#if EXPF_N == 6
+#if EXPF_N == 10
+    .table_v3 = &__two_to_jby1024[0],
+#elif EXPF_N == 9
+    .table_v3 = &__two_to_jby512[0],
+#elif EXPF_N == 8
+    .table_v3 = &__two_to_jby256[0],
+#elif EXPF_N == 7
+    .table_v3 = &__two_to_jby128[0],
+#elif EXPF_N == 6
     .table_v3 = &__two_to_jby64[0],
 #elif EXPF_N == 5
     .table_v3 = (double*)L__two_to_jby32_table,
@@ -157,8 +190,8 @@ static struct expf_data expf_v2_data = {
 #define EXPF_HUGE expf_v2_data.Huge
 #define EXPF_TABLE expf_v2_data.table
 
-#define EXPF_FARG_MIN -0x1.9fe368p6f    /* log(0x1p-150) ~= -103.97 */
-#define EXPF_FARG_MAX 0x1.62e42ep6f    /* log(0x1p128)  ~=   88.72  */
+#define EXPF_FARG_MIN -0x1.9fe368p6     /* log(2^-150) ~= -103.97 */
+#define EXPF_FARG_MAX 0x1.62e430p6     /* log(FLT_MAX) rounded up, ~88.7229 */
 #define Ln2 0x1.62e42fefa39efp-1
 
 struct log_table {
@@ -183,69 +216,68 @@ checkint (uint32_t iy)
     return 2;
 }
 
-static inline int
-isSignalingNaN (float x)
-{
-    uint32_t ix = asuint32(x);
-    return 2 * (ix ^ 0x00400000) > 2u * 0x7fc00000;;
-}
 
-static inline uint64_t top12(double x)
-{
-    /* 12 are the exponent bits */
-    return asuint64(x) >> (64 - 12);
-}
 
 static inline int
 zeroinfnan (uint32_t ix)
 {
-    return 2 * ix - 1 >= 2u * 0x7f800000 - 1;
+    return 2 * ix - 1 >= 2u * POS_INF_F32 - 1;
 }
 
 
+/* Compute log(x) where x is in the float range (including subnormals).
+ * Passing as double_t avoids float exponent field manipulation for subnormals:
+ * (double)subnormal_float is exact and gives the correct biased exponent. */
 static inline double_t
-calculate_log(float x)
+calculate_log(double_t x)
 {
     double_t q, r;
 
     double_t dexpo, temp;
 
-    uint32_t ux = asuint32(x);
+    /* Extract exponent and mantissa from the double representation.
+     * For subnormal floats, the double holds the normalized form, so
+     * the exponent and mantissa bits are correct without any adjustment.
+     * The top 23 bits of the double mantissa match the float mantissa
+     * for normal values, and give the correct normalized mantissa for
+     * subnormals. */
+    uint64_t udx = asuint64(x);
 
-    int32_t expo = ((int32_t)ux >> 23) - 127;
+    int32_t expo = (int32_t)((udx >> EXPSHIFTBITS_DP64) &
+                             (EXPBITS_DP64 >> EXPSHIFTBITS_DP64)) - EXPBIAS_DP64;
 
-    uint32_t mant = ux & 0x007FFFFF;
+    uint32_t mant = (uint32_t)(udx >> (EXPSHIFTBITS_DP64 - EXPSHIFTBITS_SP32)) & MANTBITS_SP32;
 
     dexpo = (double)expo;
 
-    uint32_t mant_n = ux & 0x007F8000;
+    uint32_t mant_n = mant & (MANTBITS_SP32 & ~((1u << (EXPSHIFTBITS_SP32 - N)) - 1u));
 
     /*
-     * Step needed for better accuracy 
+     * Step needed for better accuracy
     uint32_t mant_n1 = ux & 0x00004000;
     uint32_t j = (mant_n) + (mant_n1 << 1);
     */
 
     uint32_t j = (mant_n);
 
-    mant |= 0x3f000000U;               /* F */
+    mant |= HALFEXPBITS_SP32;               /* F */
 
-    float j_times_half = asfloat(0x3f000000U | j); /* Y */
+    float j_times_half = asfloat(HALFEXPBITS_SP32 | j); /* Y */
 
-    j >>= (23 - N);
+    j >>= (EXPSHIFTBITS_SP32 - N);
 
-    /* f = F - Y */
-    double_t f = (double)(j_times_half - asfloat(mant));
+    /* f = Y - F in double to avoid catastrophic cancellation */
+    double_t f = (double_t)j_times_half - (double_t)asfloat(mant);
 
     r = f * TAB_F_INV[j];
 
-    /* q = r + r^2*C2 + r^3*C3 */
+    /* q = r + r^2*C2 */
 
-    q = r + r * r * ( C2  + r * C3);
+    q = r + r * r * C2;
 
     /* m*log(2) + log(G) - poly */
 
-    temp  = (dexpo * Ln2) + asdouble(log_256[j]);
+    temp  = (dexpo * Ln2) + TAB_LOG(j);
 
     temp -= q;
 
@@ -258,16 +290,14 @@ static inline float calculate_exp(double_t x, uint64_t sign_bias)
     double_t poly, dn, r, z;
     uint64_t n, j;
 
-    if (unlikely ((top12(x) & 0x7ff)  > top12(88.0))) {
+    if (unlikely(x > EXPF_FARG_MAX)) {
+        ALM_RAISE_FE_OVERFLOW();
+        return asfloat((uint32_t)(sign_bias >> 32) | PINFBITPATT_SP32);
+    }
 
-        if ((float)x > EXPF_FARG_MAX) {
-            return alm_expf_special(asfloat(((uint32_t)(sign_bias >> 32) | PINFBITPATT_SP32)), ALM_E_IN_X_INF);
-        }
-
-        if (((float)x) < EXPF_FARG_MIN) {
-            return alm_expf_special(asfloat((uint32_t)(sign_bias >> 32)), ALM_E_IN_X_ZERO);
-        }
-
+    if (unlikely(x < EXPF_FARG_MIN)) {
+        ALM_RAISE_FE_UNDERFLOW();
+        return asfloat((uint32_t)(sign_bias >> 32));
     }
 
     z = x *  EXPF_TBLSZ_BY_LN2;
@@ -297,9 +327,13 @@ static inline float calculate_exp(double_t x, uint64_t sign_bias)
 
     /* polynomial = r + r^2*D2 + r^3*D3 */
 
-    double_t tbl = asdouble(sign_bias | (asuint64(__two_to_jby64[j]) + (n << (52 - EXPF_N))));
+    double_t tbl = asdouble(sign_bias | (asuint64(expf_v2_data.table_v3[j]) + (n << (52 - EXPF_N))));
 
+#if EXPF_N >= 7
+    poly = r + r * r * D2;              /* degree-2 sufficient for |r| <= ln2/128 or smaller */
+#else
     poly = r + r * r * (D2 + r * D3);
+#endif
 
     double_t result = tbl + tbl * poly;
 
@@ -318,89 +352,67 @@ float ALM_PROTO_OPT(powf)(float x, float y)
 
     uint64_t sign_bias = 0;
 
-    /* The following line relies on (ux - 0x00800000) underflowing if x is 0 or denormal, 
-       which would make the equality true for this case, as well as for x being inf or NaN. */
-    if (unlikely (((ux - 0x00800000) >= (0x7f800000 - 0x00800000)) || zeroinfnan (uy))) {
-
-        /*  All x less than 1.0625, infinity, NaN and y = zero, infinity or NAN caught here
-         *  x < 0x1p-126 or inf or nan.
-         *  Either (x < 0x1p-126 or inf or nan) or (y is 0 or inf or nan).
-         *
-         */
-        if (unlikely (zeroinfnan (uy))) {
-            if (2 * uy == 0)
-                return isSignalingNaN (x) ? x + y : 1.0f;
-
-            if (ux == 0x3f800000)
-                return isSignalingNaN (y) ? x + y : 1.0f;
-
-            if (2 * ux > 2u * 0x7f800000 || 2 * uy > 2u * 0x7f800000)
-                return x + y;
-
-            if (2 * ux == 2 * 0x3f800000)
-                return 1.0f;
-
-            if ((2 * ux < 2 * 0x3f800000) == !(uy & 0x80000000))
-                return 0.0f; /* |x|<1 && y==inf or |x|>1 && y==-inf.  */
-
-            return y * y;
+    if (unlikely(zeroinfnan(uy))) {
+        if (2 * uy == 0) {
+            ALM_KEEP_ALIVE_SP32(x + x); // raise FE_INVALID if x is sNaN
+            return 1.0f;
         }
 
-        if (unlikely (zeroinfnan (ux))) {
-
-            float_t x2 = x * x;
-
-            if (ux & 0x80000000 && checkint (uy) == 1) { /* x is -0 and y is odd */
-
-                x2 = -x2;
-
-                sign_bias = SIGN_BIAS;
-            }
-
-            if (2 * ux == 0 && uy & 0x80000000) {
-            
-                x = 1.0f / 0.0f;
-
-                ux = asuint32(x);
-
-                return asfloat(((uint32_t)(sign_bias >> 32) | ux));
-            }
-
-            return uy & 0x80000000 ? (1 / x2) : x2; /* if y is negative, return 1/x else return x */
+        if (ux == ONEEXPBITS_SP32) {
+            ALM_KEEP_ALIVE_SP32(y + y);  // raise FE_INVALID if y is sNaN
+            return 1.0f;
         }
 
-        /* x and y are non-zero finite  */
-        if (ux & 0x80000000) { /* x is negative */
- 
-            /* Finite x < 0 */
-            int yint = checkint (uy);
+        if (2 * ux > 2u * POS_INF_F32 || 2 * uy > 2u * POS_INF_F32)
+            return x + y;
 
-            if (yint == 0)
-                return (float)sqrt(x);
+        // y is +/-Inf
+        if (ux == (ONEEXPBITS_SP32 | SIGNBIT_SP32))
+            return 1.0f;
 
-            if (yint == 1)
-                sign_bias = SIGN_BIAS;
+        if ((2 * ux < 2u * ONEEXPBITS_SP32) == !(uy & SIGNBIT_SP32))
+            return 0.0f; /* |x|<1 && y==+inf, or |x|>1 && y==-inf */
 
-            ux &= 0x7fffffff; /* x is negative, y is integer */
+        return asfloat(POS_INF_F32);
+    } else if (unlikely(ux - 1 >= POS_INF_F32 - 1)) {
+        // x is zero, negative, Inf or NaN
 
-            x = asfloat(ux);
+        if (unlikely(zeroinfnan(ux))) {
+            // zero, NaN or Inf
+            if (2 * ux > 2 * POS_INF_F32)
+                return x + x;  // NaN: propagate qNaN, raise FE_INVALID for sNaN
+
+            // x is +/-0 or +/-Inf
+            // powf(+/-0, y): result is 0 for y>=0, Inf for y<0
+            // powf(+/-Inf, y): result is Inf for y>=0, 0 for y<0
+            // result negative for powf(-0, odd integer) and powf(-Inf, odd integer)
+            return asfloat(((ux & SIGNBIT_SP32) && checkint(uy) == 1 ? SIGNBIT_SP32 : 0) |
+                           // x is negative     && y is odd integer: negative else positive
+                           (!(uy & SIGNBIT_SP32) == !(2*ux) ? 0 : POS_INF_F32)
+                           //  y is nonnegative  == x is zero: zero else infinity
+                );
         }
 
-        if (ux < 0x00800000) {
-         /* Normalize subnormal x */
-            ux = asuint32(x * 0x1p23f);
+        // negative x
+        int yint = checkint(uy);
 
-            ux &= 0x7fffffff;
+        if (yint == 0)
+            return (float)sqrt(x); /* x < 0, y non-integer: NaN + FE_INVALID */
 
-            ux -= 23 << 23;
+        if (yint == 1)
+            sign_bias = SIGNBIT_DP64;
 
-            x = asfloat(ux);
-
-        }
+        ux &= POS_BITSET_F32; /* x is negative, y is integer */
+        x = asfloat(ux);
     }
 
-    /* if 0.9375 < x < 1.0625 */
-    if ((0x3F880000 - ux) < (0x3F880000 - 0x3F700000)) {
+    /* Near-1 path: x in (0.9375, 1.0625) = (0x3F700000, 0x3F880000).
+     * Unsigned wrap trick: (0x3F880000 - ux) < (0x3F880000 - 0x3F700000)
+     * is equivalent to ux in (0x3F700000, 0x3F880000). */
+#define NEAR1_LO 0x3F700000u   /* 0.9375f */
+#define NEAR1_HI 0x3F880000u   /* 1.0625f */
+
+    if ((NEAR1_HI - ux) < (NEAR1_HI - NEAR1_LO)) {
 
         double dx = (double_t)x;
 
@@ -420,9 +432,7 @@ float ALM_PROTO_OPT(powf)(float x, float y)
          *
          */
 
-        flt64_t one_minus_mant = {.d = dx - 1.0};
-
-        r = one_minus_mant.d;
+        r = dx - 1.0;
 
         double_t u_by_2 = r / (2.0 + r);
 
@@ -464,7 +474,7 @@ float ALM_PROTO_OPT(powf)(float x, float y)
     }
 
 
-    logx = calculate_log(x);
+    logx = calculate_log((double_t)x);
 
     ylogx = (double)y * logx;
 
@@ -472,5 +482,3 @@ float ALM_PROTO_OPT(powf)(float x, float y)
 
     return (float)result;
 }
-
-

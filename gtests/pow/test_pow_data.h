@@ -400,7 +400,7 @@ static libm_test_special_data_f32
 test_powf_conformance_data[] = {
     {0x7fbfffff, 0x7fa00000, FE_INVALID, 0x7fbfffff}, //nan, snan
     {0x7fa00000, 0x7fa00000, FE_INVALID, 0x7fa00000}, //powf(snan, snan)
-    {0x3f800000, 0x7fa00000, 0         , 0x3f800000},//1.0, nan
+    {0x3f800000, 0x3f800000, FE_INVALID, 0x7fa00000},  // powf(1, sNaN) = 1, FE_INVALID
     {0x3f800000, 0x7ffe0000, 0         , 0x3f800000},//1.0, qnan
     {0x3f000000, 0x7fa00000, FE_INVALID, 0x7fa00000}, // 0.5, snan
     {0x7fa00000, 0x3f000000, FE_INVALID, 0x7fe00000},//snan, 0.5
@@ -669,6 +669,23 @@ test_powf_conformance_data[] = {
     {0x7fc00000,0x7fc00000, 0         , 0xff800000},
     {0x7fc00000,0x7fc00000, 0         , 0x7fc00000},
     {0x7fc00000,0x7fc00000, 0         , 0x7f800001},
+    // pow(1, sNaN) = 1 with FE_INVALID (IEEE 754: 1^y = 1 for any y, sNaN raises FE_INVALID)
+    {0x3f800000, 0x3f800000, FE_INVALID, 0x7fa00000},  // powf(1, +sNaN) = 1
+    {0x3f800000, 0x3f800000, FE_INVALID, 0xffa00000},  // powf(1, -sNaN) = 1
+    // pow(sNaN, 0) = 1 with FE_INVALID (IEEE 754: x^0 = 1 for any x, sNaN raises FE_INVALID)
+    {0x7fa00000, 0x3f800000, FE_INVALID, 0x00000000},  // powf(+sNaN, +0) = 1
+    {0x7fa00000, 0x3f800000, FE_INVALID, 0x80000000},  // powf(+sNaN, -0) = 1
+    {0xffa00000, 0x3f800000, FE_INVALID, 0x00000000},  // powf(-sNaN, +0) = 1
+    {0xffa00000, 0x3f800000, FE_INVALID, 0x80000000},  // powf(-sNaN, -0) = 1
+    // Subnormal x: exercises the subnormal normalization path in powf()
+    {0x00000001, 0x00000000, 0, 0x40000000},  // powf(FLT_TRUE_MIN, 2) = 0 (underflows)
+    {0x00000001, 0x1a3504f3, 0, 0x3f000000},  // powf(FLT_TRUE_MIN, 0.5)
+    {0x00000001, 0x7f800000, 0, 0xbf800000},  // powf(FLT_TRUE_MIN, -1) = +Inf
+    {0x00000001, 0x2cd744fd, 0, 0x3e800000},  // powf(FLT_TRUE_MIN, 0.25)
+    {0x00400000, 0x00000000, 0, 0x40000000},  // powf(mid_subnormal, 2) = 0
+    {0x00400000, 0x1fb504f3, 0, 0x3f000000},  // powf(mid_subnormal, 0.5)
+    {0x007fffff, 0x00000000, 0, 0x40000000},  // powf(largest_subnormal, 2) = 0
+    {0x007fffff, 0x007fffff, 0, 0x3f800000},  // powf(largest_subnormal, 1) = identity
 };
 
 #endif	/*__TEST_POW_DATA_H__*/

@@ -101,8 +101,8 @@ struct log2_table {
     double lead, tail;
 };
 
-extern struct log2_table log2_table_256[];
-extern        double     log_f_inv_256[];
+extern const struct log2_table log2_table_256[];
+extern const double log_f_inv_256[];
 #define TAB_F_INV      log_f_inv_256
 #define TAB_LOG2       log2_table_256
 

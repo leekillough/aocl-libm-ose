@@ -49,7 +49,7 @@
 #include <libm/compiler.h>
 #include "kern/sqrtf_pos.c"
 
-extern uint64_t log_256[];
+extern const uint64_t log_256[];
 #define N 8
 #define TABLE_SIZE (1ULL << N)
 #define MAX_POLYDEGREE  8
