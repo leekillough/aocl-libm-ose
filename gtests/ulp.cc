@@ -385,14 +385,25 @@ static double computeUlpMpfr(mpfr_t mp_aop, mpfr_t exptd, int mantissa_bits) {
     mpfr_sub(mp_diff, mp_aop, exptd, MPFR_RNDN);
     mpfr_abs(mp_diff, mp_diff, MPFR_RNDN);
 
-    // ulp(aop) = 2^(binade_exponent - mantissa_bits)
-    mpfr_exp_t e = mpfr_get_exp(mp_aop);  // binade exponent: mp_aop in [2^(e-1), 2^e)
-    // For subnormals/zero mpfr_get_exp is undefined; use minimum ULP.
+    // ulp(aop) = 2^(binade_exponent - mantissa_bits), clamped to the minimum
+    // subnormal ULP so that a bit-exact subnormal result always gives 0 ULP.
+    // Minimum subnormal ULP: 2^(-(bias + mantissa_bits - 1)) where
+    //   bias = 127 for float (mantissa_bits=24), 1023 for double (mantissa_bits=53).
+    int min_ulp_exp = -(mantissa_bits == 24 ? 126 : 1022) - (mantissa_bits - 1);
+    mpfr_exp_t ulp_exp;
     if (mpfr_zero_p(mp_aop) || mpfr_number_p(mp_aop) == 0) {
-        mpfr_set_ui_2exp(mp_ulp, 1, -(mantissa_bits - 1) - (mantissa_bits == 24 ? 126 : 1022), MPFR_RNDN);
+        // Zero or non-finite: use minimum ULP
+        ulp_exp = min_ulp_exp;
     } else {
-        mpfr_set_ui_2exp(mp_ulp, 1, e - mantissa_bits, MPFR_RNDN);
+        // mpfr_get_exp returns e such that mp_aop in [2^(e-1), 2^e).
+        // For a double subnormal stored in MPFR, e may be below the normal range;
+        // clamp so that all subnormals share the same ULP.
+        mpfr_exp_t e = mpfr_get_exp(mp_aop);
+        ulp_exp = e - mantissa_bits;
+        if (ulp_exp < min_ulp_exp)
+            ulp_exp = min_ulp_exp;
     }
+    mpfr_set_ui_2exp(mp_ulp, 1, ulp_exp, MPFR_RNDN);
     mpfr_div(mp_diff, mp_diff, mp_ulp, MPFR_RNDN);
 
     double result = mpfr_get_d(mp_diff, MPFR_RNDN);

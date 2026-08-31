@@ -47,6 +47,7 @@ bool special_case = false;
 
 uint32_t GetnIpArgs( void )
 {
+  setUlpThreshold(2.0);
   return ipargs;
 }
 
