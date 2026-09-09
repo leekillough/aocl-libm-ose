@@ -44,15 +44,15 @@
 
 void FUNC_LDEXP(REAL x, int expn, mpfr_t result)
 {
-   REAL_L y1;
-
     /*
-     * IEEE-754 leaves the sign of a NaN result unspecified, but MPFR
-     * collapses every NaN to a single canonical (negative) NaN through
-     * mpfr_get_d/_ld.
+     * IEEE-754 leaves the sign of a NaN result unspecified; propagate
+     * any NaN input directly rather than routing through MPFR, which
+     * collapses every NaN to a single canonical (negative) NaN.
      */
-    if (isnan((double)x))
-        return (REAL_L)x;
+    if (isnan((double)x)) {
+        mpfr_set_nan(result);
+        return;
+    }
 
     mpfr_rnd_t rnd = MPFR_RNDN;
     mpfr_t mpx, mp_rop;
