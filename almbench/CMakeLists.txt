@@ -168,7 +168,7 @@ add_executable(${EXE_NAME} ${SRCS})
 target_include_directories(${EXE_NAME} PRIVATE ${INCS})
 
 # Ensure executable name is consistent across platforms
-set_target_properties(${EXE_NAME} PROPERTIES OUTPUT_NAME ${EXE_NAME} SUFFIX ".x")
+set_target_properties(${EXE_NAME} PROPERTIES SUFFIX ".x")
 
 # Platform-specific compile options for Windows with Clang
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -194,3 +194,14 @@ add_custom_target(${EXE_NAME}-distclean
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
     COMMENT "Remove cmake_generated files and directories"
 )
+
+# Tests
+if(DEFINED ${PROJECT_PREFIX}_LIBM_BUILD_TESTS)
+    option(ALM_BENCH_BUILD_TESTS "Build almbench unit tests" ${${PROJECT_PREFIX}_LIBM_BUILD_TESTS})
+else()
+    option(ALM_BENCH_BUILD_TESTS "Build almbench unit tests" OFF)
+endif()
+if(ALM_BENCH_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

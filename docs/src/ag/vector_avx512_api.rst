@@ -101,6 +101,9 @@ Acos
 .. doxygenfunction:: amd_vrs16_acosf
   :project: libm
 
+.. doxygenfunction:: amd_vrd8_acos
+  :project: libm
+
 
 Atan
 ----
@@ -111,14 +114,30 @@ Atan
 .. doxygenfunction:: amd_vrd8_atan
   :project: libm
 
+.. doxygenfunction:: amd_vrd8_atan2
+  :project: libm
+
 
 Hyperbolic Functions
 ====================
+
+Cosh
+----
+
+.. doxygenfunction:: amd_vrs16_coshf
+  :project: libm
+
+.. doxygenfunction:: amd_vrd8_cosh
+  :project: libm
+
 
 Tanh
 ----
 
 .. doxygenfunction:: amd_vrs16_tanhf
+  :project: libm
+
+.. doxygenfunction:: amd_vrd8_tanh
   :project: libm
 
 
@@ -145,6 +164,16 @@ Exp2
   :project: libm
 
 .. doxygenfunction:: amd_vrd8_exp2
+  :project: libm
+
+
+Exp10
+-----
+
+.. doxygenfunction:: amd_vrs16_exp10f
+  :project: libm
+
+.. doxygenfunction:: amd_vrd8_exp10
   :project: libm
 
 
