@@ -113,6 +113,9 @@ Atan
 .. doxygenfunction:: amd_vrd2_atan
   :project: libm
 
+.. doxygenfunction:: amd_vrd2_atan2
+  :project: libm
+
 
 Hyperbolic Functions
 ====================
@@ -131,6 +134,9 @@ Tanh
 ----
 
 .. doxygenfunction:: amd_vrs4_tanhf
+  :project: libm
+
+.. doxygenfunction:: amd_vrd2_tanh
   :project: libm
 
 

@@ -82,12 +82,14 @@ double getFuncOp(double *data) {
 }
 #endif
 
-void getExpected(float *data, mpfr_t result) {
-  alm_mp_exp10f(data[0], result);
+double getExpected(float *data) {
+  auto val = alm_mp_exp10f(data[0]);
+  return val;
 }
 
-void getExpected(double *data, mpfr_t result) {
-  alm_mp_exp10(data[0], result);
+long double getExpected(double *data) {
+  auto val = alm_mp_exp10(data[0]);
+  return val;
 }
 
 // Used by the Complex Number Functions only!
@@ -186,7 +188,8 @@ int test_v4s(test_data *data, int idx)  {
 }
 
 int test_v4d(test_data *data, int idx)  {
-#if 0
+#if (LIBM_PROTOTYPE != PROTOTYPE_MSVC) \
+    && ((LIBM_PROTOTYPE != PROTOTYPE_GLIBC) || GLIBC_VERSION_CHECK(2, 35))
   double *ip  = (double*)data->ip;
   double *op  = (double*)data->op;
   __m256d ip4 = _mm256_set_pd(ip[idx+3], ip[idx+2], ip[idx+1], ip[idx]);
