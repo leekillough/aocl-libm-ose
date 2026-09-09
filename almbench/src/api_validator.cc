@@ -125,13 +125,13 @@ string api_prototype_to_string(ApiTypes type)
  */
 static const map<string, vector<string>> api_table_amd = {
     // { function_name, { supported_variants } }
-    {"acos",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrsa", "vrda"}},
+    {"acos",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"acosh",     {"sd", "ss"}},
     {"add",       {"vrsa", "vrda"}},
     {"asin",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"asinh",     {"sd", "ss"}},
     {"atan",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
-    {"atan2",     {"sd", "ss"}},
+    {"atan2",     {"sd", "ss", "vrd2", "vrd4", "vrd8"}},
     {"atanh",     {"sd", "ss"}},
     {"cbrt",      {"sd", "ss", "vrs4", "vrs8", "vrd2", "vrsa", "vrda"}},
     {"cdfnorm",   {"sd", "vrd2", "vrd4", "vrd8", "vrda"}},
@@ -140,13 +140,13 @@ static const map<string, vector<string>> api_table_amd = {
     {"cexp",      {"sc", "sz"}},
     {"copysign",  {"sd", "ss"}},
     {"cos",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
-    {"cosh",      {"sd", "ss", "vrs4", "vrs8", "vrd2", "vrsa", "vrda"}},
+    {"cosh",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"erf",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"erfc",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"erfcinv",   {"sd", "vrd2", "vrd4", "vrd8", "vrda"}},
     {"erfinv",    {"sd", "vrd2", "vrd4", "vrd8", "vrda"}},
     {"exp",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
-    {"exp10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd8", "vrsa", "vrda"}},
+    {"exp10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"exp2",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"expm1",     {"sd", "ss", "vrs4", "vrsa", "vrda"}},
     {"fabs",      {"sd", "ss", "vrs4", "vrs8", "vrd2", "vrd4", "vrsa", "vrda"}},
@@ -179,7 +179,7 @@ static const map<string, vector<string>> api_table_amd = {
     {"sub",       {"vrsa", "vrda"}},
     {"sqrt",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"tan",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
-    {"tanh",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrsa"}},
+    {"tanh",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8", "vrsa", "vrda"}},
     {"trunc",     {"sd", "ss"}},
     {"clog",      {"sc", "sz"}},
     {"cpow",      {"sc", "sz"}},
@@ -192,7 +192,7 @@ static const map<string, vector<string>> api_table_glibc = {
     // { function_name, { supported_variants } }
 #if GLIBC_VERSION_CHECK(2,35)
     // All functions with full vector support in 2.42+
-    {"acos",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4"}},
+    {"acos",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"acosh",     {"sd", "ss"}},
     {"add",       {}},
     {"asin",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
@@ -205,11 +205,11 @@ static const map<string, vector<string>> api_table_glibc = {
     {"cexp",      {"sc", "sz"}},
     {"copysign",  {"sd", "ss"}},
     {"cos",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
-    {"cosh",      {"sd", "ss", "vrs4", "vrs8", "vrd2"}},
+    {"cosh",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"erf",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"erfc",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"exp",       {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
-    {"exp10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd8"}},
+    {"exp10",     {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"exp2",      {"sd", "ss", "vrs4", "vrs8", "vrs16", "vrd2", "vrd4", "vrd8"}},
     {"expm1",     {"sd", "ss", "vrs4"}},
     {"fabs",      {"sd", "ss"}},
@@ -378,7 +378,7 @@ const map<ApiTypes, vector<string>> libm_api_names = {
                         "rint", "round", "trunc", "clog", "cexp",
                         "cdfnorm", "cdfnorminv", "erfcinv", "erfinv"}},
     {API_PROTOTYPE_02, {"add", "sub", "mul", "pow", "cpow", "fmax", "fmin", "fdim", "fmod",
-                        "remainder", "atan2", "hypot", "copysign", "nextafter", "ldexp"}},
+                        "remainder", "atan2", "hypot", "copysign", "nextafter"}},
     {API_PROTOTYPE_03, {"powx"}},
     {API_PROTOTYPE_04, {"sincos"}},
     {API_PROTOTYPE_05, {"linearfrac"}},
@@ -529,6 +529,14 @@ int validate_api(struct AlmLibs *alibs,
 
     YamlBatchWriter<U> writer(yop->outfile);
     writer.emit_yaml_file = is_verbose_mode_enabled();
+
+    if (ipp->multi_range.has_value() &&
+        api_type != API_PROTOTYPE_01 && api_type != API_PROTOTYPE_02) {
+        std::cerr << "multi_range is only supported for api_prototype_01 and "
+                     "api_prototype_02; skipping test '"
+                  << yop->api_name << "'.\n";
+        return -1;
+    }
 
     switch (api_type) {
         case API_PROTOTYPE_01:
