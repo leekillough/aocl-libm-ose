@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2008-2023 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (C) 2008-2026 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -28,17 +28,25 @@ import os
 
 class LLVM(Compiler):
     def Setup(self):
-        self.SetCmd('clang')
-        self.SetCxxCmd('clang++')
+        cc_base = os.path.basename(self.Cmd())
+        if 'aoc' in cc_base:
+            self.SetCmd('aoc')
+            self.SetCxxCmd('aoc++')
+        elif 'clang-cl' in cc_base:
+            # Windows clang-cl uses the same driver for C and C++.
+            self.SetCmd('clang-cl')
+            self.SetCxxCmd('clang-cl')
+        else:
+            self.SetCmd('clang')
+            self.SetCxxCmd('clang++')
 
         if os.name == "posix":
             common_ld_flags = ['-fuse-ld=ld']
         else:
             common_ld_flags = []
 
+        # NOTE: -ffp-contract is applied uniformly (gcc + llvm)
         self.compile_flags_release += [
-                # ffp-contract is needed to generate FMA instr for vectors
-            '-ffp-contract=fast',
                 # '-Ofast',
                 # '-fipa-pta',
                 # '-funsafe-loop-optimizations',

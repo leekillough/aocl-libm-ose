@@ -79,10 +79,10 @@ _OPT_COMMON_SRCS = [
 # Each function generates a vrda_<name> wrapper (e.g., vrda_sin, vrda_cos).
 # The wrapper calls the corresponding vrd4_<name> 4-wide vector function.
 # NOTE: Keep in sync with VRDA_UNARY_AVX2_FUNCS in CMakeLists.txt (CMake).
-# NOTE: fabs, acos excluded - standalone (no AVX-512 vrd8_* kernels for unified template).
+# NOTE: fabs excluded - standalone (no AVX-512 vrd8_* kernels for unified template).
 VRDA_UNARY_AVX2_FUNCS = [
-    'sin', 'cos', 'tan', 'exp', 'exp2', 'log', 'log2',
-    'asin', 'atan', 'sqrt', 'round',
+    'sin', 'cos', 'tan', 'tanh', 'exp', 'exp2', 'exp10', 'log', 'log2',
+    'asin', 'acos', 'atan', 'sqrt', 'round', 'cosh',
     'erf', 'erfc', 'erfinv', 'erfcinv',
     'cdfnorm', 'cdfnorminv',
 ]
@@ -91,11 +91,11 @@ VRDA_UNARY_AVX2_FUNCS = [
 # Each function generates a vrsa_<name> wrapper (e.g., vrsa_sinf, vrsa_cosf).
 # The wrapper calls the corresponding vrs8_<name> 8-wide vector function.
 # NOTE: Keep in sync with VRSA_UNARY_AVX2_FUNCS in CMakeLists.txt (CMake).
-# NOTE: fabsf, coshf, cbrtf excluded - standalone (no AVX-512 vrs16_* kernels for unified template).
+# NOTE: fabsf, cbrtf excluded - standalone (no AVX-512 vrs16_* kernels for unified template).
 VRSA_UNARY_AVX2_FUNCS = [
     'sinf', 'cosf', 'tanf', 'expf', 'exp2f', 'exp10f', 'logf', 'log2f', 'log10f',
     'asinf', 'atanf', 'acosf', 'sqrtf', 'roundf',
-    'erff', 'erfcf', 'tanhf',
+    'erff', 'erfcf', 'tanhf', 'coshf',
 ]
 
 # Template file paths for AVX2 (relative to src/optimized).
@@ -112,8 +112,8 @@ AVX2_VRSA_TEMPLATE = 'vec/avx2/vrsa_unary_avx2.c'
 # The wrapper calls the corresponding vrd8_<name> 8-wide vector function.
 # NOTE: Keep in sync with VRDA_UNARY_AVX512_FUNCS in CMakeLists.txt (CMake).
 VRDA_UNARY_AVX512_FUNCS = [
-    'sin', 'cos', 'tan', 'exp', 'exp2', 'log', 'log2',
-    'asin', 'atan', 'sqrt', 'round',
+    'sin', 'cos', 'tan', 'tanh', 'exp', 'exp2', 'exp10', 'log', 'log2',
+    'asin', 'acos', 'atan', 'sqrt', 'round', 'cosh',
     'erf', 'erfc', 'erfinv', 'erfcinv',
     'cdfnorm', 'cdfnorminv',
 ]
@@ -125,7 +125,7 @@ VRDA_UNARY_AVX512_FUNCS = [
 VRSA_UNARY_AVX512_FUNCS = [
     'sinf', 'cosf', 'tanf', 'expf', 'exp2f', 'exp10f', 'logf', 'log2f', 'log10f',
     'asinf', 'atanf', 'acosf', 'sqrtf', 'roundf',
-    'erff', 'erfcf', 'tanhf',
+    'erff', 'erfcf', 'tanhf', 'coshf',
 ]
 
 # Template file paths for AVX-512 (relative to src/optimized).

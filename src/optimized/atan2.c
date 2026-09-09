@@ -47,6 +47,7 @@
 #include <libm/typehelper.h>
 #include <libm/compiler.h>
 
+#define ATAN2_JBY256
 #include "atan2_data.h"
 
 double ALM_PROTO_OPT(atan2)(double y, double x)
