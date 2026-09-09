@@ -100,15 +100,25 @@ message(DEBUG "Project with name \"${PROJECT_PREFIX}\" with version ${${PROJECT_
 set(${PROJECT_PREFIX}_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Windows builds use single-config generators with external sub-builds (gapi, mparith).
-if(WIN32)
-    if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
+if (WIN32)
+    if(NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
         set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type (Debug or Release)" FORCE)
         message(STATUS "CMAKE_BUILD_TYPE not specified, defaulting to Release")
     endif()
     if(NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release)$")
-        message(FATAL_ERROR "CMAKE_BUILD_TYPE must be Debug or Release on Windows (got: '${CMAKE_BUILD_TYPE}')")
+        message(FATAL_ERROR "CMAKE_BUILD_TYPE must be Debug or Release (got: '${CMAKE_BUILD_TYPE}')")
     endif()
+    # Restrict multi-config generators to the selected build type
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE}" CACHE STRING "" FORCE)
+    message(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 endif()
+# Single-config generators (e.g. Ninja, Unix Makefiles) ignore
+# CMAKE_CONFIGURATION_TYPES. Reference the value supplied via CMake presets
+# so it is not reported as an unused manually-specified variable.
+if(DEFINED CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}")
+endif()
+
 
 #------------------------------
 # Configure archiver to use 'rc' flags instead of 'qc'
@@ -135,13 +145,6 @@ include(GNUInstallDirs)
 
 if (NOT DEFINED ${${PROJECT_PREFIX}_GENERATED})
     set(${PROJECT_PREFIX}_GENERATED "${PROJECT_BINARY_DIR}/generated")
-endif()
-
-if(WIN32)
-    set(CMAKE_COMPILE_WARNING_AS_ERROR FALSE)
-    if("${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
-        message(FATAL_ERROR  "CMAKE for ${PROJECT_NAME} not supported on ${CMAKE_C_COMPILER_ID}")
-    endif()
 endif()
 
 #------------------------------
@@ -173,21 +176,58 @@ if(DEFINED ALM_STATIC_DISPATCH)
   endif()
 endif()
 
+include(Compiler_Features)
+# ------------------------------------------------------------------
+# Floating-point contraction (FMA fusion) control.
+#   fast (default) -> -ffp-contract=fast
+#   on             -> -ffp-contract=on
+#   off            -> -ffp-contract=off  (bit-reproducible builds)
+# ------------------------------------------------------------------
+set(ALM_FP_CONTRACT "fast" CACHE STRING "ffp-contract=on/off/fast")
+set_property(CACHE ALM_FP_CONTRACT PROPERTY STRINGS fast on off)
+string(TOLOWER "${ALM_FP_CONTRACT}" ALM_FP_CONTRACT_MODE)
+if(NOT ALM_FP_CONTRACT_MODE MATCHES "^(fast|on|off)$")
+  message(WARNING "ALM_FP_CONTRACT='${ALM_FP_CONTRACT}' is invalid; expected one of fast/on/off. Falling back to default 'fast'.")
+  set(ALM_FP_CONTRACT_MODE fast)
+endif()
+get_fast_flag(FFP)
+message(STATUS "Set Compiler flag: ${FFP}")
+
 if(WIN32)
+    # Block pure MSVC (cl.exe); ClangCL reports as "Clang" and is supported.
+    if(NOT msvc_clang_cl
+       AND (CMAKE_C_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"))
+        message(FATAL_ERROR
+            "MSVC (cl.exe) is not supported; use clang-cl.exe or '-T ClangCL'.")
+    endif()
+
     # Use AT&T assembly syntax on Windows (required for Clang 19+ compatibility)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -masm=att")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -masm=att")
+
+    # Normalize /GS for bit-identical output; C/C++ only so the assembler
+    # is unaffected. Gated on MSVC (satisfied by clang-cl) since /GS- is an
+    # MSVC-style flag rejected by clang in GNU mode.
+    if(MSVC)
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/GS->)
+    endif()
+
+    if(CMAKE_GENERATOR MATCHES "Visual Studio")
+        # Strip only the /fp:precise flag that MSBuild injects by default
+        # (clang-cl already defaults to precise, so it is redundant). Any
+        # explicitly requested mode such as /fp:fast or /fp:strict is preserved.
+        foreach(lang C CXX)
+            foreach(config "" _DEBUG _RELEASE)
+                if(DEFINED CMAKE_${lang}_FLAGS${config})
+                    string(REGEX REPLACE "/fp:precise" "" CMAKE_${lang}_FLAGS${config} "${CMAKE_${lang}_FLAGS${config}}")
+                endif()
+            endforeach()
+        endforeach()
+    endif()
 else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fmacro-prefix-map=${${PROJECT_PREFIX}_SOURCE_DIR}/=.")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fmacro-prefix-map=${${PROJECT_PREFIX}_SOURCE_DIR}/=.")
 endif()
-
-#------------------------------
-# AOCL_Utils CPUID_library requirements
-#------------------------------
-
-# Internal utils (replaces external aocl-utils)
-add_subdirectory(utils)
 
 #------------------------------
 # Setup Project Includes
@@ -234,7 +274,6 @@ endif()
 #------------------------------------
 # Check compiler support for different ISAs
 #------------------------------------
-include(Compiler_Features)
 configure_file("${${PROJECT_PREFIX}_SOURCE_DIR}/CMake/Config.hh.in"
             "${${PROJECT_PREFIX}_CONFIG_OUTPUT_FILE}"
             @ONLY)
@@ -284,29 +323,49 @@ if(${${PROJECT_PREFIX}_LIBM_BUILD_LIBRARY})
     set(ALM_INCLUDE_DIR "${${PROJECT_PREFIX}_SOURCE_DIR}/include")
 endif()
 
+
+#------------------------------
+# External sub-build helpers
+#------------------------------
+include(Cct_ExternalProject)
+
 #----------------------------------------------------------
 # Add libm_testsuite if LIBM_BUILD_TESTSUITE is enabled
 #----------------------------------------------------------
 if (${${PROJECT_PREFIX}_LIBM_BUILD_TESTSUITE})
+    enable_testing()
     add_subdirectory(almbench EXCLUDE_FROM_ALL)
+    alm_add_config_wrapper_target(almbench "${CMAKE_BINARY_DIR}/almbench" libm_runner)
 endif()
 
 #------------------------------
-# Add Tests if ENABLE_TESTS is defined
+# Add Tests if LIBM_BUILD_TESTS is enabled
 # These are Integration Tests,
 # Unit tests are expected to be in respective source folder
 #------------------------------
 if (${${PROJECT_PREFIX}_LIBM_BUILD_TESTS})
     enable_testing()
     add_subdirectory(gtests EXCLUDE_FROM_ALL)
+    alm_add_config_wrapper_target(gtests "${CMAKE_BINARY_DIR}/gtests" gtests_suite)
+endif()
+
+#------------------------------
+# Add internal CPU-detection utils tests if UTILS_BUILD_TESTS is enabled.
+# These link the self-contained libalm and live at the top level (cpuid_tests)
+# rather than under src/utils, which carries only the build-required objects.
+#------------------------------
+if(${${PROJECT_PREFIX}_LIBM_BUILD_LIBRARY} AND ${${PROJECT_PREFIX}_UTILS_BUILD_TESTS})
+    enable_testing()
+    add_subdirectory(cpuid_tests EXCLUDE_FROM_ALL)
 endif()
 
 #----------------------------------------------
-# Add Examples if LIBM_ENABLE_TESTS is defined
+# Add Examples if LIBM_BUILD_EXAMPLES is enabled
 #---------------------------------------------
 if (${${PROJECT_PREFIX}_LIBM_BUILD_EXAMPLES})
     enable_testing()
     add_subdirectory(examples EXCLUDE_FROM_ALL)
+    alm_add_config_wrapper_target(examples "${CMAKE_BINARY_DIR}/examples" test_libm)
 endif()
 
 #----------------------------------------------------------
