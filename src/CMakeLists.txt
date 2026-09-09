@@ -88,10 +88,10 @@ set(LIBMCFLAGS ${LIBMCFLAGS} ${auflag})
 # Each function generates a vrda_<name> wrapper (e.g., vrda_sin, vrda_cos).
 # The wrapper calls the corresponding vrd4_<name> 4-wide vector function.
 # NOTE: Keep in sync with VRDA_UNARY_AVX2_FUNCS in optimized_srcs.py (SCons).
-# NOTE: fabs, acos excluded - standalone (no AVX-512 vrd8_* kernels for unified template).
+# NOTE: fabs excluded - standalone (no AVX-512 vrd8_* kernels for unified template).
 set(VRDA_UNARY_AVX2_FUNCS
-    sin cos tan exp exp2 log log2
-    asin atan sqrt round
+    sin cos tan tanh exp exp2 exp10 log log2
+    asin acos atan sqrt round cosh
     erf erfc erfinv erfcinv
     cdfnorm cdfnorminv
 )
@@ -100,11 +100,11 @@ set(VRDA_UNARY_AVX2_FUNCS
 # Each function generates a vrsa_<name> wrapper (e.g., vrsa_sinf, vrsa_cosf).
 # The wrapper calls the corresponding vrs8_<name> 8-wide vector function.
 # NOTE: Keep in sync with VRSA_UNARY_AVX2_FUNCS in optimized_srcs.py (SCons).
-# NOTE: fabsf, coshf, cbrtf excluded - standalone (no AVX-512 vrs16_* kernels for unified template).
+# NOTE: fabsf, cbrtf excluded - standalone (no AVX-512 vrs16_* kernels for unified template).
 set(VRSA_UNARY_AVX2_FUNCS
     sinf cosf tanf expf exp2f exp10f logf log2f log10f
     asinf atanf acosf sqrtf roundf
-    erff erfcf tanhf
+    erff erfcf tanhf coshf
 )
 
 # Template file paths for AVX2 array wrappers
@@ -120,8 +120,8 @@ set(AVX2_VRSA_TEMPLATE "${CMAKE_CURRENT_SOURCE_DIR}/optimized/vec/avx2/vrsa_unar
 # The wrapper calls the corresponding vrd8_<name> 8-wide vector function.
 # NOTE: Keep in sync with VRDA_UNARY_AVX512_FUNCS in optimized_srcs.py (SCons).
 set(VRDA_UNARY_AVX512_FUNCS
-    sin cos tan exp exp2 log log2
-    asin atan sqrt round
+    sin cos tan tanh exp exp2 exp10 log log2
+    asin acos atan sqrt round cosh
     erf erfc erfinv erfcinv
     cdfnorm cdfnorminv
 )
@@ -133,7 +133,7 @@ set(VRDA_UNARY_AVX512_FUNCS
 set(VRSA_UNARY_AVX512_FUNCS
     sinf cosf tanf expf exp2f exp10f logf log2f log10f
     asinf atanf acosf sqrtf roundf
-    erff erfcf tanhf
+    erff erfcf tanhf coshf
 )
 
 # Template file paths for AVX-512 array wrappers
@@ -175,7 +175,7 @@ set(INCLUDE_PATHS
   )
 include_directories(${INCLUDE_PATHS})
 
-set(INCLUDES "${INCLUDE_PATHS}" "${ALM_UTILS_INCLUDE_DIR}")
+set(INCLUDES "${INCLUDE_PATHS}" "${${PROJECT_PREFIX}_SOURCE_DIR}/src/utils")
 
 #libmobj variable is to collect object libraries in subdirectories
 set(libmobj "")
@@ -185,6 +185,12 @@ add_subdirectory(isa)
 add_subdirectory(iface)
 add_subdirectory(arch)
 add_subdirectory(ref)
+
+# Internal CPU-detection utils, built as a dedicated object library and embedded
+# directly into libalm (self-contained), matching the SCons build. The subdir
+# appends its objects to libmobj and propagates them via PARENT_SCOPE, like the
+# other src/ subdirectories above.
+add_subdirectory(utils)
 
 file(GLOB SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.c")
 add_library(src OBJECT ${SRCS})
@@ -205,11 +211,11 @@ set(LIBM_PUBLIC_HEADERS "${${PROJECT_PREFIX}_SOURCE_DIR}/include/external/amdlib
 if (WIN32)
   set(LIBALM libalm)
   set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  set(EXTRA_LIBS alm_utils_static "msvcrt")
+  set(EXTRA_LIBS "msvcrt")
   set(CMAKE_STATIC_LIBRARY_SUFFIX  "-static.lib")
 else()
   set(LIBALM alm)
-  set(EXTRA_LIBS alm_utils_static "-Wl,-Bdynamic -lc")
+  set(EXTRA_LIBS "-Wl,-Bdynamic -lc")
 endif()
 
 set(libm "")
