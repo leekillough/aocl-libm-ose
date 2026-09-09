@@ -349,10 +349,12 @@ typedef __m256d (*gcc_acos_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_asin_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_atan_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_cos_vrd4_func_t)(__m256d);
+typedef __m256d (*gcc_cosh_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_erf_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_erfc_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_exp_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_exp2_vrd4_func_t)(__m256d);
+typedef __m256d (*gcc_exp10_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_fabs_vrd4_func_t)(__m256d);
 typedef __m256d (*gcc_linearfrac_vrd4_func_t)(__m256d, __m256d, double, double, double, double);
 typedef __m256d (*gcc_log_vrd4_func_t)(__m256d);
@@ -469,9 +471,11 @@ typedef void (*gcc_tan_vrda_func_t)(int, const double*, double*);
 
 #ifdef __AVX512F__
 // --- Double Precision 512-bit Vector (vrd8) Functions ---
+typedef __m512d (*gcc_acos_vrd8_func_t)(__m512d);
 typedef __m512d (*gcc_asin_vrd8_func_t)(__m512d);
 typedef __m512d (*gcc_atan_vrd8_func_t)(__m512d);
 typedef __m512d (*gcc_cos_vrd8_func_t)(__m512d);
+typedef __m512d (*gcc_cosh_vrd8_func_t)(__m512d);
 typedef __m512d (*gcc_erf_vrd8_func_t)(__m512d);
 typedef __m512d (*gcc_erfc_vrd8_func_t)(__m512d);
 typedef __m512d (*gcc_exp_vrd8_func_t)(__m512d);
@@ -492,6 +496,7 @@ typedef __m512 (*gcc_acos_vrs16_func_t)(__m512);
 typedef __m512 (*gcc_asin_vrs16_func_t)(__m512);
 typedef __m512 (*gcc_atan_vrs16_func_t)(__m512);
 typedef __m512 (*gcc_cos_vrs16_func_t)(__m512);
+typedef __m512 (*gcc_cosh_vrs16_func_t)(__m512);
 typedef __m512 (*gcc_erf_vrs16_func_t)(__m512);
 typedef __m512 (*gcc_erfc_vrs16_func_t)(__m512);
 typedef __m512 (*gcc_exp_vrs16_func_t)(__m512);
@@ -711,10 +716,12 @@ static struct {
     gcc_asin_vrd4_func_t asin_vrd4;
     gcc_atan_vrd4_func_t atan_vrd4;
     gcc_cos_vrd4_func_t cos_vrd4;
+    gcc_cosh_vrd4_func_t cosh_vrd4;
     gcc_erf_vrd4_func_t erf_vrd4;
     gcc_erfc_vrd4_func_t erfc_vrd4;
     gcc_exp_vrd4_func_t exp_vrd4;
     gcc_exp2_vrd4_func_t exp2_vrd4;
+    gcc_exp10_vrd4_func_t exp10_vrd4;
     gcc_fabs_vrd4_func_t fabs_vrd4;
     gcc_linearfrac_vrd4_func_t linearfrac_vrd4;
     gcc_log_vrd4_func_t log_vrd4;
@@ -838,9 +845,11 @@ static struct {
     // ============================================================================
     // DOUBLE PRECISION 512-BIT VECTOR (vrd8) VARIANTS
     // ============================================================================
+    gcc_acos_vrd8_func_t acos_vrd8;
     gcc_asin_vrd8_func_t asin_vrd8;
     gcc_atan_vrd8_func_t atan_vrd8;
     gcc_cos_vrd8_func_t cos_vrd8;
+    gcc_cosh_vrd8_func_t cosh_vrd8;
     gcc_erf_vrd8_func_t erf_vrd8;
     gcc_erfc_vrd8_func_t erfc_vrd8;
     gcc_exp_vrd8_func_t exp_vrd8;
@@ -863,6 +872,7 @@ static struct {
     gcc_asin_vrs16_func_t asin_vrs16;
     gcc_atan_vrs16_func_t atan_vrs16;
     gcc_cos_vrs16_func_t cos_vrs16;
+    gcc_cosh_vrs16_func_t cosh_vrs16;
     gcc_erf_vrs16_func_t erf_vrs16;
     gcc_erfc_vrs16_func_t erfc_vrs16;
     gcc_exp_vrs16_func_t exp_vrs16;
@@ -1461,10 +1471,12 @@ static void init_gcc_symbols(void) {
     gcc_funcs.asin_vrd4 = nullptr;
     gcc_funcs.atan_vrd4 = nullptr;
     gcc_funcs.cos_vrd4 = nullptr;
+    gcc_funcs.cosh_vrd4 = nullptr;
     gcc_funcs.erf_vrd4 = nullptr;
     gcc_funcs.erfc_vrd4 = nullptr;
     gcc_funcs.exp_vrd4 = nullptr;
     gcc_funcs.exp2_vrd4 = nullptr;
+    gcc_funcs.exp10_vrd4 = nullptr;
     gcc_funcs.fabs_vrd4 = nullptr;
     gcc_funcs.linearfrac_vrd4 = nullptr;
     gcc_funcs.log_vrd4 = nullptr;
@@ -1579,9 +1591,11 @@ static void init_gcc_symbols(void) {
 
 #ifdef __AVX512F__
     // AVX512 variants (512-bit)
+    gcc_funcs.acos_vrd8 = nullptr;
     gcc_funcs.asin_vrd8 = nullptr;
     gcc_funcs.atan_vrd8 = nullptr;
     gcc_funcs.cos_vrd8 = nullptr;
+    gcc_funcs.cosh_vrd8 = nullptr;
     gcc_funcs.erf_vrd8 = nullptr;
     gcc_funcs.erfc_vrd8 = nullptr;
     gcc_funcs.exp_vrd8 = nullptr;
@@ -1601,6 +1615,7 @@ static void init_gcc_symbols(void) {
     gcc_funcs.asin_vrs16 = nullptr;
     gcc_funcs.atan_vrs16 = nullptr;
     gcc_funcs.cos_vrs16 = nullptr;
+    gcc_funcs.cosh_vrs16 = nullptr;
     gcc_funcs.erf_vrs16 = nullptr;
     gcc_funcs.erfc_vrs16 = nullptr;
     gcc_funcs.exp_vrs16 = nullptr;
@@ -1725,6 +1740,7 @@ static void init_gcc_symbols(void) {
     gcc_funcs.erfc_vrs8 = _ZGVdN8v_erfcf;
 
     // COSH - 256-bit (AVX2)
+    gcc_funcs.cosh_vrd4 = _ZGVdN4v_cosh;
     gcc_funcs.cosh_vrs8 = _ZGVdN8v_coshf;
     gcc_funcs.tanh_vrs8 = _ZGVdN8v_tanhf;
 
@@ -1733,6 +1749,7 @@ static void init_gcc_symbols(void) {
     gcc_funcs.exp2_vrs8 = _ZGVdN8v_exp2f;
 
     // EXP10 - 256-bit (AVX2)
+    gcc_funcs.exp10_vrd4 = _ZGVdN4v_exp10;
     gcc_funcs.exp10_vrs8 = _ZGVdN8v_exp10f;
 
     // LOG2, LOG10 - 256-bit (AVX2)
@@ -1748,11 +1765,16 @@ static void init_gcc_symbols(void) {
     gcc_funcs.atan_vrs16 = _ZGVeN16v_atanf;
 
     // ACOS, TAN - 512-bit (AVX512)
+    gcc_funcs.acos_vrd8 = _ZGVeN8v_acos;
     gcc_funcs.acos_vrs16 = _ZGVeN16v_acosf;
     gcc_funcs.tan_vrd8 = _ZGVeN8v_tan;
     gcc_funcs.tan_vrs16 = _ZGVeN16v_tanf;
 
     gcc_funcs.tanh_vrs16 = _ZGVeN16v_tanhf;
+
+    // COSH - 512-bit (AVX512)
+    gcc_funcs.cosh_vrd8 = _ZGVeN8v_cosh;
+    gcc_funcs.cosh_vrs16 = _ZGVeN16v_coshf;
 
     // ERF, ERFC - 512-bit (AVX512)
     gcc_funcs.erf_vrd8 = _ZGVeN8v_erf;
@@ -2542,6 +2564,10 @@ SHIM_EXPORT void shim_cos_vrd4(InParams<libm::AlignedM256d, double> *ipp) {
     ipp->op[0].data = gcc_funcs.cos_vrd4(ipp->ip[0].data);
 }
 
+SHIM_EXPORT void shim_cosh_vrd4(InParams<libm::AlignedM256d, double> *ipp) {
+    ipp->op[0].data = gcc_funcs.cosh_vrd4(ipp->ip[0].data);
+}
+
 SHIM_EXPORT void shim_erf_vrd4(InParams<libm::AlignedM256d, double> *ipp) {
     ipp->op[0].data = gcc_funcs.erf_vrd4(ipp->ip[0].data);
 }
@@ -2556,6 +2582,10 @@ SHIM_EXPORT void shim_exp_vrd4(InParams<libm::AlignedM256d, double> *ipp) {
 
 SHIM_EXPORT void shim_exp2_vrd4(InParams<libm::AlignedM256d, double> *ipp) {
     ipp->op[0].data = gcc_funcs.exp2_vrd4(ipp->ip[0].data);
+}
+
+SHIM_EXPORT void shim_exp10_vrd4(InParams<libm::AlignedM256d, double> *ipp) {
+    ipp->op[0].data = gcc_funcs.exp10_vrd4(ipp->ip[0].data);
 }
 
 SHIM_EXPORT void shim_fabs_vrd4(InParams<libm::AlignedM256d, double> *ipp) {
@@ -3009,6 +3039,10 @@ SHIM_EXPORT void shim_tan_vrda(InParams<double, double> *ipp) {
 // ============================================================================
 // DOUBLE PRECISION 512-BIT VECTOR (vrd8) VARIANTS
 // ============================================================================
+SHIM_EXPORT void shim_acos_vrd8(InParams<libm::AlignedM512d, double> *ipp) {
+    ipp->op[0].data = gcc_funcs.acos_vrd8(ipp->ip[0].data);
+}
+
 SHIM_EXPORT void shim_asin_vrd8(InParams<libm::AlignedM512d, double> *ipp) {
     ipp->op[0].data = gcc_funcs.asin_vrd8(ipp->ip[0].data);
 }
@@ -3019,6 +3053,10 @@ SHIM_EXPORT void shim_atan_vrd8(InParams<libm::AlignedM512d, double> *ipp) {
 
 SHIM_EXPORT void shim_cos_vrd8(InParams<libm::AlignedM512d, double> *ipp) {
     ipp->op[0].data = gcc_funcs.cos_vrd8(ipp->ip[0].data);
+}
+
+SHIM_EXPORT void shim_cosh_vrd8(InParams<libm::AlignedM512d, double> *ipp) {
+    ipp->op[0].data = gcc_funcs.cosh_vrd8(ipp->ip[0].data);
 }
 
 SHIM_EXPORT void shim_erf_vrd8(InParams<libm::AlignedM512d, double> *ipp) {
@@ -3101,6 +3139,10 @@ SHIM_EXPORT void shim_atan_vrs16(InParams<libm::AlignedM512, float> *ipp) {
 
 SHIM_EXPORT void shim_cos_vrs16(InParams<libm::AlignedM512, float> *ipp) {
     ipp->op[0].data = gcc_funcs.cos_vrs16(ipp->ip[0].data);
+}
+
+SHIM_EXPORT void shim_cosh_vrs16(InParams<libm::AlignedM512, float> *ipp) {
+    ipp->op[0].data = gcc_funcs.cosh_vrs16(ipp->ip[0].data);
 }
 
 SHIM_EXPORT void shim_erf_vrs16(InParams<libm::AlignedM512, float> *ipp) {
