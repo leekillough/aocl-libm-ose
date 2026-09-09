@@ -258,7 +258,9 @@ __m128d FN_PROTOTYPE(vrd2_pow)(__m128d x, __m128d y);
 __m128d FN_PROTOTYPE(vrd2_powx)(__m128d x, double y);
 __m128d FN_PROTOTYPE(vrd2_tan)(__m128d x);
 __m128d FN_PROTOTYPE(vrd2_cosh)(__m128d x);
+__m128d FN_PROTOTYPE(vrd2_tanh)(__m128d x);
 __m128d FN_PROTOTYPE(vrd2_atan)(__m128d x);
+__m128d FN_PROTOTYPE(vrd2_atan2)(__m128d y, __m128d x);
 __m128d FN_PROTOTYPE(vrd2_erf)(__m128d x);
 __m128d FN_PROTOTYPE(vrd2_erfinv)(__m128d x);
 __m128d FN_PROTOTYPE(vrd2_sqrt)(__m128d x);
@@ -273,13 +275,17 @@ __m128d FN_PROTOTYPE(vrd2_erfcinv)(__m128d x);
 
 __m256d FN_PROTOTYPE(vrd4_exp)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_exp2)(__m256d x);
+__m256d FN_PROTOTYPE(vrd4_exp10)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_log2)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_expm1)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_log)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_cos)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_sin)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_tan)(__m256d x);
+__m256d FN_PROTOTYPE(vrd4_tanh)(__m256d x);
+__m256d FN_PROTOTYPE(vrd4_cosh)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_atan)(__m256d x);
+__m256d FN_PROTOTYPE(vrd4_atan2)(__m256d y, __m256d x);
 __m256d FN_PROTOTYPE(vrd4_pow)(__m256d x, __m256d y);
 __m256d FN_PROTOTYPE(vrd4_powx)(__m256d x, double y);
 __m256d FN_PROTOTYPE(vrd4_erf)(__m256d x);
@@ -293,6 +299,10 @@ __m256d FN_PROTOTYPE(vrd4_round)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_cdfnorm)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_cdfnorminv)(__m256d x);
 __m256d FN_PROTOTYPE(vrd4_erfcinv)(__m256d x);
+
+#ifdef __AVX512F__
+__m512d FN_PROTOTYPE(vrd8_tanh)(__m512d x);
+#endif
 
 __m128 FN_PROTOTYPE(vrs4_erff)(__m128 x);
 __m128 FN_PROTOTYPE(vrs4_expf)(__m128 x);
@@ -421,6 +431,7 @@ void FN_PROTOTYPE(vrsa_tanf)(int n, const float *x, float *y);
 void FN_PROTOTYPE(vrda_atan)(int n, const double *x, double *y);
 void FN_PROTOTYPE(vrda_erf)(int n, const double *x, double *y);
 void FN_PROTOTYPE(vrda_tan)(int n, const double *x, double *y);
+void FN_PROTOTYPE(vrda_tanh)(int n, const double *x, double *y);
 void FN_PROTOTYPE(vrda_cosh)(int n, const double *x, double *y);
 void FN_PROTOTYPE(vrda_erfc)(int n, const double *x, double *y);
 void FN_PROTOTYPE(vrsa_erfcf)(int n, const float *x, float *y);
